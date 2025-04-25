@@ -1,0 +1,36 @@
+# 의존성 디렉토리
+node_modules/
+
+# 로그 파일
+logs/
+*.log
+npm-debug.log*
+
+# 환경 변수 파일
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# 빌드 출력
+dist/
+build/
+
+# 임시 파일
+tmp/
+temp/
+
+# 편집기 설정 및 캐시
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# 테스트 관련
+coverage/
+
+# 로컬 개발 데이터베이스
+*.sqlite

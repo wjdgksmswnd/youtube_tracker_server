@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ODO - 대시보드</title>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.css" rel="stylesheet">
+  <link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+  <div id="app">
+    <!-- 로딩 표시기 -->
+    <div id="loading-overlay" class="d-flex justify-content-center align-items-center">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">로딩 중...</span>
+      </div>
+    </div>
+
+    <!-- 네비게이션 바 -->
+    <nav class="navbar navbar-expand-lg navbar-light sticky-top" id="main-navbar">
+      <div class="container">
+        <a class="navbar-brand" href="#">ODO</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+          <ul class="navbar-nav me-auto" id="nav-tabs">
+            <!-- 탭은 JS로 동적 생성됨 -->
+          </ul>
+          <div class="d-flex align-items-center">
+            <span class="me-3" id="username-display"></span>
+            <button class="btn btn-outline-secondary btn-sm" id="logout-btn">로그아웃</button>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <!-- 메인 콘텐츠 영역 -->
+    <div id="main-content" class="container py-4">
+      <!-- 콘텐츠는 JS로 동적 로드됨 -->
+    </div>
+
+    <!-- 알림 컨테이너 -->
+    <div class="alert-container" id="alert-container" style="display: none;">
+      <div class="alert" role="alert" id="alert-content"></div>
+    </div>
+  </div>
+
+  <!-- 라이브러리 스크립트 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+  
+  <!-- 앱 스크립트 -->
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/tabs/dashboard.js"></script>
+  <script src="js/tabs/history.js"></script>
+  <script src="js/tabs/group.js"></script>
+  <script src="js/tabs/group-admin.js"></script>
+  <script src="js/tabs/user-admin.js"></script>
+  <script src="js/tabs/stats.js"></script>
+  <script src="js/tabs/playlist-admin.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

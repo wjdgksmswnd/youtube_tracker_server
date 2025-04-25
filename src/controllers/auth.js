@@ -1,0 +1,486 @@
+// src/controllers/auth.js - 인증 관련 컨트롤러
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
+const db = require('../db');
+const { logger } = require('../utils/logger');
+const { AppError } = require('../utils/errors');
+
+/**
+ * 사용자 로그인 처리
+ * @param {Request} req - Express 요청 객체
+ * @param {Response} res - Express 응답 객체
+ * @param {Function} next - 다음 미들웨어
+ */
+const login = async (req, res, next) => {
+  try {
+    const { user_id, password } = req.body;
+    
+    // 이메일 필드 호환성
+    const email = req.body.email || user_id;
+    
+    // 필수 입력 확인
+    if (!user_id && !email) {
+      return next(new AppError('아이디가 필요합니다', 400));
+    }
+    if (!password) {
+      return next(new AppError('비밀번호가 필요합니다', 400));
+    }
+    
+    // 1. 먼저 신규 user 테이블에서 검색
+    const userQuery = await db.query('SELECT * FROM "user" WHERE user_id = $1 AND is_deleted = FALSE', [user_id]);
+    if (userQuery.rows.length > 0) {
+      return await handleLoginNew(res, next, userQuery.rows[0], password);
+    }
+    
+    // 2. 신규 테이블에 없으면 레거시 테이블에서 검색
+    return await handleLoginLegacy(res, next, email, password);
+  } catch (err) {
+    logger.error('로그인 오류:', err);
+    return next(new AppError('서버 오류', 500));
+  }
+};
+
+/**
+ * 신규 사용자 로그인 처리
+ * @param {Response} res - Express 응답 객체
+ * @param {Function} next - 다음 미들웨어
+ * @param {Object} user - 사용자 정보
+ * @param {string} password - 입력 비밀번호
+ */
+const handleLoginNew = async (res, next, user, password) => {
+  try {
+    // PostgreSQL 내장 password 타입 검증
+    const pwCheckQuery = await db.query(
+      'SELECT (password = $1) AS pw_match FROM "user" WHERE uuid = $2',
+      [password, user.uuid]
+    );
+    
+    if (!pwCheckQuery.rows[0]?.pw_match) {
+      return next(new AppError('아이디 또는 비밀번호가 잘못되었습니다', 401));
+    }
+    
+    // 로그인 성공, 토큰 생성
+    const token = jwt.sign(
+      { user_id: user.user_id, username: user.username }, 
+      process.env.JWT_SECRET || 'your_jwt_secret_key', 
+      { expiresIn: '30d' }
+    );
+    
+    // 마지막 로그인 시간 업데이트
+    await db.query('UPDATE "user" SET last_login = CURRENT_TIMESTAMP WHERE uuid = $1', [user.uuid]);
+    
+    // 응답
+    return res.json({ 
+      message: '로그인 성공', 
+      token, 
+      user: { 
+        uuid: user.uuid,
+        user_id: user.user_id, 
+        username: user.username, 
+        group_id: user.group_id,
+        level_id: user.level_id
+      } 
+    });
+  } catch (err) {
+    logger.error('비밀번호 검증 오류:', err);
+    return next(new AppError('서버 오류', 500));
+  }
+};
+
+/**
+ * 레거시 사용자 로그인 처리
+ * @deprecated 이전 버전 호환성을 위해 유지됨
+ * @param {Response} res - Express 응답 객체
+ * @param {Function} next - 다음 미들웨어
+ * @param {string} email - 사용자 이메일
+ * @param {string} password - 입력 비밀번호
+ */
+const handleLoginLegacy = async (res, next, email, password) => {
+  try {
+    const userRes = await db.query('SELECT * FROM users WHERE email = $1', [email]);
+    if (!userRes.rows.length) {
+      return next(new AppError('이메일 또는 비밀번호가 잘못되었습니다', 401));
+    }
+    
+    const user = userRes.rows[0];
+    
+    // bcrypt 비밀번호 검증
+    if (!await bcrypt.compare(password, user.password_hash)) {
+      return next(new AppError('이메일 또는 비밀번호가 잘못되었습니다', 401));
+    }
+    
+    // 마지막 로그인 시간 업데이트
+    await db.query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = $1', [user.user_id]);
+    
+    // 토큰 생성 (이메일을 user_id로 사용)
+    const token = jwt.sign(
+      { user_id: email, username: user.username }, 
+      process.env.JWT_SECRET || 'your_jwt_secret_key', 
+      { expiresIn: '30d' }
+    );
+    
+    return res.json({ 
+      message: '로그인 성공', 
+      token, 
+      user: { 
+        user_id: user.user_id, 
+        username: user.username, 
+        email: user.email, 
+        virtual_earnings: user.virtual_earnings 
+      } 
+    });
+  } catch (err) {
+    logger.error('레거시 로그인 오류:', err);
+    return next(new AppError('서버 오류', 500));
+  }
+};
+
+/**
+ * 토큰 인증 미들웨어
+ * @param {Request} req - Express 요청 객체
+ * @param {Response} res - Express 응답 객체
+ * @param {Function} next - 다음 미들웨어
+ */
+const authenticate = async (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  
+  if (!token) {
+    return next(new AppError('인증 토큰이 필요합니다', 401));
+  }
+  
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
+    req.user = decoded;
+    
+    // 사용자 존재 여부 확인
+    const userQuery = await db.query(
+      'SELECT uuid, user_id, username, level_id, group_id, is_deleted FROM "user" WHERE user_id = $1 AND is_deleted = FALSE',
+      [decoded.user_id]
+    );
+    
+    if (userQuery.rows.length === 0) {
+      // 레거시 사용자 확인
+      return await checkLegacyUser(req, res, next, decoded);
+    }
+    
+    // 신규 사용자 정보 설정
+    req.user.legacy = false;
+    req.user.uuid = userQuery.rows[0].uuid;
+    req.user.username = userQuery.rows[0].username;
+    req.user.level_id = userQuery.rows[0].level_id;
+    req.user.group_id = userQuery.rows[0].group_id;
+    
+    next();
+  } catch (err) {
+    return next(new AppError('유효하지 않은 토큰입니다', 403));
+  }
+};
+
+/**
+ * 세션 인증 미들웨어 (확장 프로그램용)
+ * @param {Request} req - Express 요청 객체
+ * @param {Response} res - Express 응답 객체
+ * @param {Function} next - 다음 미들웨어
+ */
+const authenticateSession = async (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  const sessionId = req.headers['x-session-id'];
+  
+  if (!token) {
+    return next(new AppError('인증 토큰이 필요합니다', 401));
+  }
+  
+  try {
+    // 토큰 검증
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
+    req.user = decoded;
+    
+    // 사용자 확인
+    const userQuery = await db.query(
+      'SELECT uuid, user_id, username, level_id, group_id, is_deleted FROM "user" WHERE user_id = $1 AND is_deleted = FALSE',
+      [decoded.user_id]
+    );
+    
+    if (userQuery.rows.length === 0) {
+      // 레거시 사용자 확인
+      const legacyResult = await checkLegacyUser(req, res, null, decoded);
+      if (!legacyResult) {
+        return next(new AppError('유효하지 않은 사용자입니다', 401));
+      }
+    } else {
+      // 신규 사용자 정보 설정
+      req.user.legacy = false;
+      req.user.uuid = userQuery.rows[0].uuid;
+      req.user.username = userQuery.rows[0].username;
+      req.user.level_id = userQuery.rows[0].level_id;
+      req.user.group_id = userQuery.rows[0].group_id;
+    }
+    
+    // 세션 ID가 있으면 세션 검증
+    if (sessionId) {
+      const sessionResult = await validateSession(req, res, next, sessionId);
+      if (!sessionResult) {
+        return; // 에러 응답은 validateSession 내에서 처리됨
+      }
+    }
+    
+    next();
+  } catch (err) {
+    return next(new AppError('유효하지 않은 토큰입니다', 403));
+  }
+};
+
+/**
+ * 레거시 사용자 확인
+ * @deprecated 이전 버전 호환성을 위해 유지됨
+ * @param {Request} req - Express 요청 객체
+ * @param {Response} res - Express 응답 객체
+ * @param {Function} next - 다음 미들웨어
+ * @param {Object} decoded - 디코딩된 토큰
+ */
+const checkLegacyUser = async (req, res, next, decoded) => {
+  try {
+    // 레거시 테이블에서 사용자 확인
+    const legacyUserQuery = await db.query(
+      'SELECT user_id, username, is_deleted FROM users WHERE email = $1 AND is_deleted = FALSE',
+      [decoded.user_id]
+    );
+    
+    if (legacyUserQuery.rows.length === 0) {
+      if (next) {
+        return next(new AppError('유효하지 않은 사용자입니다', 401));
+      }
+      return false;
+    }
+    
+    // 레거시 사용자 정보 설정
+    req.user.legacy = true;
+    req.user.uuid = legacyUserQuery.rows[0].user_id;
+    req.user.username = legacyUserQuery.rows[0].username;
+    
+    if (next) {
+      next();
+    }
+    return true;
+  } catch (err) {
+    logger.error('레거시 사용자 확인 중 오류:', err);
+    if (next) {
+      return next(new AppError('서버 오류', 500));
+    }
+    return false;
+  }
+};
+
+/**
+ * 새 세션 생성
+ * @param {Request} req - Express 요청 객체
+ * @param {Response} res - Express 응답 객체
+ * @param {Function} next - 다음 미들웨어
+ */
+const createSession = async (req, res, next) => {
+  try {
+    const userId = req.user.uuid;
+    const { device_info } = req.body;
+    const ipAddress = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const userAgent = req.headers['user-agent'];
+    
+    // 새 세션 ID 생성
+    const sessionId = crypto.randomBytes(32).toString('hex');
+    
+    // 브라우저 및 OS 정보 추출
+    let browser = 'Unknown';
+    let os = 'Unknown';
+    
+    if (userAgent) {
+      if (userAgent.includes('Chrome')) browser = 'Chrome';
+      else if (userAgent.includes('Firefox')) browser = 'Firefox';
+      else if (userAgent.includes('Safari')) browser = 'Safari';
+      else if (userAgent.includes('Edge')) browser = 'Edge';
+      
+      if (userAgent.includes('Windows')) os = 'Windows';
+      else if (userAgent.includes('Mac')) os = 'MacOS';
+      else if (userAgent.includes('Linux')) os = 'Linux';
+      else if (userAgent.includes('Android')) os = 'Android';
+      else if (userAgent.includes('iOS')) os = 'iOS';
+    }
+    
+    // IP 주소 충돌 확인
+    const existingSessionQuery = await db.query(
+      'SELECT session_id FROM user_session WHERE user_id = $1 AND ip_address = $2 AND is_active = TRUE',
+      [userId, ipAddress]
+    );
+    
+    if (existingSessionQuery.rows.length > 0) {
+      // 동일 IP의 기존 세션이 있으면 비활성화
+      await db.query(
+        'UPDATE user_session SET is_active = FALSE WHERE user_id = $1 AND ip_address = $2 AND is_active = TRUE',
+        [userId, ipAddress]
+      );
+    }
+    
+    // 새 세션 생성
+    await db.query(
+      'INSERT INTO user_session (session_id, user_id, ip_address, browser, os, device_info, token) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [sessionId, userId, ipAddress, browser, os, JSON.stringify(device_info || {}), req.headers.authorization.split(' ')[1]]
+    );
+    
+    // 로그인 히스토리에 기록
+    await db.query(
+      'INSERT INTO login_history (user_id, session_id, ip_address, user_agent, login_status) VALUES ($1, $2, $3, $4, $5)',
+      [userId, sessionId, ipAddress, userAgent, 'success']
+    );
+    
+    return res.json({
+      message: '세션이 생성되었습니다',
+      sessionId,
+      ipAddress
+    });
+  } catch (err) {
+    logger.error('세션 생성 오류:', err);
+    return next(new AppError('서버 오류', 500));
+  }
+};
+
+/**
+ * 세션 종료
+ * @param {Request} req - Express 요청 객체
+ * @param {Response} res - Express 응답 객체
+ * @param {Function} next - 다음 미들웨어
+ */
+const endSession = async (req, res, next) => {
+  try {
+    const sessionId = req.headers['x-session-id'];
+    if (!sessionId) {
+      return next(new AppError('세션 ID가 필요합니다', 400));
+    }
+    
+    await db.query(
+      'UPDATE user_session SET is_active = FALSE WHERE session_id = $1 AND user_id = $2',
+      [sessionId, req.user.uuid]
+    );
+    
+    // 로그인 히스토리에 로그아웃 기록
+    await db.query(
+      'INSERT INTO login_history (user_id, session_id, ip_address, user_agent, login_status) VALUES ($1, $2, $3, $4, $5)',
+      [req.user.uuid, sessionId, req.headers['x-forwarded-for'] || req.socket.remoteAddress, req.headers['user-agent'], 'logout']
+    );
+    
+    return res.json({ message: '세션이 종료되었습니다' });
+  } catch (err) {
+    logger.error('세션 종료 오류:', err);
+    return next(new AppError('서버 오류', 500));
+  }
+};
+
+/**
+ * 사용자 정보 검증
+ * @param {Request} req - Express 요청 객체
+ * @param {Response} res - Express 응답 객체
+ * @param {Function} next - 다음 미들웨어
+ */
+const verifyUser = async (req, res, next) => {
+  try {
+    if (req.user.legacy) {
+      // 레거시 사용자 정보 조회
+      const legacyUserQuery = await db.query(
+        'SELECT user_id, username, email, virtual_earnings, created_at FROM users WHERE user_id = $1',
+        [req.user.uuid]
+      );
+      
+      if (!legacyUserQuery.rows.length) {
+        return next(new AppError('사용자를 찾을 수 없습니다', 404));
+      }
+      
+      return res.json({
+        message: '유효한 토큰입니다',
+        user: legacyUserQuery.rows[0]
+      });
+    } else {
+      // 신규 사용자 정보 조회
+      const userQuery = await db.query(
+        'SELECT uuid, user_id, username, level_id, group_id, created_at FROM "user" WHERE uuid = $1',
+        [req.user.uuid]
+      );
+      
+      if (!userQuery.rows.length) {
+        return next(new AppError('사용자를 찾을 수 없습니다', 404));
+      }
+      
+      return res.json({
+        message: '유효한 토큰입니다',
+        user: userQuery.rows[0]
+      });
+    }
+  } catch (err) {
+    logger.error('토큰 검증 오류:', err);
+    return next(new AppError('서버 오류', 500));
+  }
+};
+
+/**
+ * 세션 검증
+ * @param {Request} req - Express 요청 객체
+ * @param {Response} res - Express 응답 객체
+ * @param {Function} next - 다음 미들웨어
+ * @param {string} sessionId - 세션 ID
+ */
+const validateSession = async (req, res, next, sessionId) => {
+  try {
+    const userId = req.user.uuid;
+    const sessionQuery = await db.query(
+      'SELECT * FROM user_session WHERE session_id = $1 AND user_id = $2 AND is_active = TRUE',
+      [sessionId, userId]
+    );
+    
+    if (sessionQuery.rows.length === 0) {
+      // 세션이 없거나 만료된 경우
+      const otherSessionQuery = await db.query(
+        'SELECT ip_address FROM user_session WHERE user_id = $1 AND is_active = TRUE LIMIT 1',
+        [userId]
+      );
+      
+      let message = '세션이 만료되었거나 유효하지 않습니다. 다시 로그인해주세요.';
+      let ipConflict = false;
+      
+      if (otherSessionQuery.rows.length > 0) {
+        const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+        if (otherSessionQuery.rows[0].ip_address === clientIp) {
+          message = '같은 IP에서 이미 로그인되어 있습니다. 중복 창은 허용되지 않습니다.';
+          ipConflict = true;
+        } else {
+          message = '다른 장소에서 로그인되어 현재 세션이 종료되었습니다.';
+        }
+      }
+      
+      return next(new AppError(message, 401, { error: 'session_expired', ip_conflict: ipConflict }));
+    }
+    
+    // 세션 정보 저장
+    req.session = sessionQuery.rows[0];
+    
+    // 세션 마지막 활동 시간 업데이트
+    await db.query(
+      'UPDATE user_session SET last_active = CURRENT_TIMESTAMP WHERE session_id = $1',
+      [sessionId]
+    );
+    
+    return true;
+  } catch (err) {
+    logger.error('세션 검증 중 오류:', err);
+    return next(new AppError('서버 오류', 500));
+  }
+};
+
+// 내보내기
+module.exports = {
+  login,
+  authenticate,
+  authenticateSession,
+  createSession,
+  endSession,
+  verifyUser,
+  validateSession
+};

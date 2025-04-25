@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ODO - 로그인</title>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+  <link href="css/style.css" rel="stylesheet">
+  <style>
+    body {
+      background-color: #f9f9f9;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .login-container {
+      max-width: 400px;
+      width: 100%;
+      padding: 40px;
+      background-color: white;
+      border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }
+    .login-logo {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    .login-title {
+      font-size: 24px;
+      font-weight: 700;
+      text-align: center;
+      margin-bottom: 30px;
+      color: var(--primary-color);
+    }
+    .form-control {
+      padding: 12px;
+      border-radius: 5px;
+    }
+    .btn-primary {
+      padding: 12px;
+    }
+    .dev-mode {
+      font-size: 12px;
+      color: #5f6368;
+      margin-top: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+    }
+  </style>
+</head>
+<body>
+  <!-- 로딩 표시기 -->
+  <div id="loading-overlay" class="d-flex justify-content-center align-items-center">
+    <div class="spinner-border text-primary" role="status">
+      <span class="visually-hidden">로딩 중...</span>
+    </div>
+  </div>
+
+  <div class="login-container">
+    <div class="login-logo">
+      <img src="img/logo.png" alt="ODO Logo" height="60">
+    </div>
+    <h1 class="login-title">ODO</h1>
+    
+    <div class="alert alert-danger" id="login-alert" style="display: none;"></div>
+    
+    <form id="login-form">
+      <div class="mb-4">
+        <label for="userId" class="form-label">아이디</label>
+        <input type="text" class="form-control" id="userId" required>
+      </div>
+      <div class="mb-4">
+        <label for="password" class="form-label">비밀번호</label>
+        <input type="password" class="form-control" id="password" required>
+      </div>
+      <button type="submit" class="btn btn-primary w-100 mt-3">로그인</button>
+    </form>
+    
+    <div class="dev-mode">
+      <input type="checkbox" id="dev-mode-toggle">
+      <label for="dev-mode-toggle">개발 모드</label>
+    </div>
+  </div>
+
+  <!-- 알림 컨테이너 -->
+  <div class="alert-container" id="alert-container" style="display: none;">
+    <div class="alert" role="alert" id="alert-content"></div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script>
+    // login.js
+    document.addEventListener('DOMContentLoaded', function() {
+      // DOM 요소
+      const loginForm = document.getElementById('login-form');
+      const loginAlert = document.getElementById('login-alert');
+      const loadingOverlay = document.getElementById('loading-overlay');
+      const devModeToggle = document.getElementById('dev-mode-toggle');
+      
+      // 초기화
+      init();
+      
+      function init() {
+        // 로딩 숨기기
+        hideLoading();
+        
+        // 개발 모드 설정 로드
+        loadDevModeSetting();
+        
+        // 이미 로그인된 경우 대시보드로 이동
+        checkLoginStatus();
+        
+        // 이벤트 리스너 설정
+        loginForm.addEventListener('submit', handleLogin);
+        devModeToggle.addEventListener('change', toggleDevMode);
+      }
+      
+      // 로그인 상태 확인
+      function checkLoginStatus() {
+        const token = localStorage.getItem(CONFIG.TOKEN_KEY);
+        if (token) {
+          // 토큰 검증 후 대시보드로 이동
+          verifyToken(token);
+        }
+      }
+      
+      // 토큰 검증
+      async function verifyToken(token) {
+        try {
+          showLoading();
+          
+          const apiUrl = getApiUrl();
+          const response = await fetch(`${apiUrl}/user/verify`, {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          
+          if (response.ok) {
+            // 토큰이 유효하면 대시보드로 이동
+            window.location.href = 'dashboard.html';
+          } else {
+            // 토큰이 유효하지 않으면 제거
+            localStorage.removeItem(CONFIG.TOKEN_KEY);
+            localStorage.removeItem(CONFIG.SESSION_KEY);
+            hideLoading();
+          }
+        } catch (error) {
+          console.error('토큰 검증 오류:', error);
+          localStorage.removeItem(CONFIG.TOKEN_KEY);
+          localStorage.removeItem(CONFIG.SESSION_KEY);
+          hideLoading();
+        }
+      }
+      
+      // 로그인 처리
+      async function handleLogin(e) {
+        e.preventDefault();
+        
+        const userId = document.getElementById('userId').value;
+        const password = document.getElementById('password').value;
+        
+        if (!userId || !password) {
+          showLoginError('아이디와 비밀번호를 모두 입력해주세요.');
+          return;
+        }
+        
+        try {
+          showLoading();
+          
+          const apiUrl = getApiUrl();
+          const response = await fetch(`${apiUrl}/login`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ user_id: userId, password })
+          });
+          
+          const data = await response.json();
+          
+          if (response.ok) {
+            // 토큰 저장
+            localStorage.setItem(CONFIG.TOKEN_KEY, data.token);
+            
+            // 사용자 정보 저장
+            if (data.user) {
+              localStorage.setItem(CONFIG.USER_INFO_KEY, JSON.stringify(data.user));
+            }
+            
+            // 세션 생성 요청
+            await createSession(data.token);
+            
+            // 대시보드로 이동
+            window.location.href = 'dashboard.html';
+          } else {
+            hideLoading();
+            showLoginError(data.error || '로그인에 실패했습니다.');
+          }
+        } catch (error) {
+          console.error('로그인 오류:', error);
+          hideLoading();
+          showLoginError('서버 연결에 실패했습니다.');
+        }
+      }
+      
+      // 세션 생성
+      async function createSession(token) {
+        try {
+          // 기기 정보 수집
+          const deviceInfo = {
+            screenWidth: window.screen.width,
+            screenHeight: window.screen.height,
+            userAgent: navigator.userAgent,
+            platform: navigator.platform,
+            language: navigator.language
+          };
+          
+          const apiUrl = getApiUrl();
+          const response = await fetch(`${apiUrl}/session`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ device_info: deviceInfo })
+          });
+          
+          const data = await response.json();
+          
+          if (response.ok && data.sessionId) {
+            localStorage.setItem(CONFIG.SESSION_KEY, data.sessionId);
+            console.log('세션 생성 성공:', data.sessionId);
+          }
+        } catch (error) {
+          console.error('세션 생성 오류:', error);
+        }
+      }
+      
+      // 개발 모드 설정 로드
+      function loadDevModeSetting() {
+        const devMode = localStorage.getItem('dev_mode') === 'true';
+        devModeToggle.checked = devMode;
+        console.log('개발 모드:', devMode ? '활성화' : '비활성화');
+      }
+      
+      // 개발 모드 토글
+      function toggleDevMode() {
+        const enabled = devModeToggle.checked;
+        localStorage.setItem('dev_mode', enabled);
+        console.log('개발 모드 변경:', enabled ? '활성화' : '비활성화');
+      }
+      
+      // API URL 가져오기
+      function getApiUrl() {
+        const devMode = localStorage.getItem('dev_mode') === 'true';
+        return devMode ? 'http://localhost:8080/api' : 'https://odo.ist/api';
+      }
+      
+      // 로그인 오류 표시
+      function showLoginError(message) {
+        loginAlert.textContent = message;
+        loginAlert.style.display = 'block';
+        
+        // 3초 후 오류 메시지 숨기기
+        setTimeout(() => {
+          loginAlert.style.display = 'none';
+        }, 3000);
+      }
+      
+      // 로딩 표시
+      function showLoading() {
+        loadingOverlay.style.display = 'flex';
+      }
+      
+      // 로딩 숨기기
+      function hideLoading() {
+        loadingOverlay.style.display = 'none';
+      }
+    });
+  </script>
+</body>
+</html>
