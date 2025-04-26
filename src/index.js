@@ -5,7 +5,8 @@ const cors = require('cors');
 const helmet = require('helmet');
 const bodyParser = require('body-parser');
 const { logger } = require('./utils/logger');
-const { errorHandler } = require('./middleware');
+const { errorHandler, notFound } = require('./middleware');
+const db = require('./db');
 
 // 라우터 가져오기
 const authRouter = require('./routes/auth');
@@ -60,7 +61,22 @@ app.use((req, res, next) => {
   next();
 });
 
-// 기본 라우트
+// 데이터베이스 연결 테스트
+(async () => {
+  try {
+    // 데이터베이스 초기화 및 테스트 쿼리
+    const testQuery = await db.query('SELECT 1 as test');
+    if (testQuery.rows[0] && testQuery.rows[0].test === 1) {
+      logger.info('MariaDB에 성공적으로 연결되었습니다.');
+    } else {
+      logger.error('MariaDB 연결 테스트에 실패했습니다.');
+    }
+  } catch (err) {
+    logger.error('MariaDB 연결 중 오류 발생:', err);
+    process.exit(1); // 데이터베이스 연결 실패 시 프로세스 종료
+  }
+})();
+
 // 기본 라우트
 app.get('/', (req, res) => {
   const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
@@ -104,7 +120,8 @@ app.get('/', (req, res) => {
 app.get('/api', (req, res) => res.json({ 
   message: 'API 서버 실행 중', 
   version: '2.0.0',
-  datetime: new Date().toISOString()
+  datetime: new Date().toISOString(),
+  database: 'MariaDB'
 }));
 
 // API 라우터 설정
@@ -117,6 +134,9 @@ app.use('/api/playlist', playlistRouter);
 app.use('/api/track', trackRouter);
 app.use('/api/tabs', tabsRouter);
 app.use('/api/admin', myAdminRouter);
+
+// 404 오류 처리
+app.use(notFound);
 
 // 오류 처리 미들웨어
 app.use(errorHandler);

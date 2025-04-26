@@ -37,7 +37,7 @@ const listPlaylists = async (req, res, next) => {
              op.created_at, op.updated_at, u.username as created_by_name,
              yp.item_count, yp.thumbnail_url
       FROM odo_playlist op
-      LEFT JOIN "user" u ON op.created_by = u.uuid
+      LEFT JOIN "user" u ON op.created_by = u.id
       LEFT JOIN youtube_playlist yp ON op.youtube_playlist_id = yp.youtube_playlist_id
       ${whereClause}
       ORDER BY op.created_at DESC
@@ -110,7 +110,7 @@ const getPlaylist = async (req, res, next) => {
              op.created_at, op.updated_at, u.username as created_by_name,
              yp.item_count, yp.thumbnail_url, yp.last_updated
       FROM odo_playlist op
-      LEFT JOIN "user" u ON op.created_by = u.uuid
+      LEFT JOIN "user" u ON op.created_by = u.id
       LEFT JOIN youtube_playlist yp ON op.youtube_playlist_id = yp.youtube_playlist_id
       WHERE op.id = $1 AND op.is_deleted = FALSE
     `;
@@ -161,7 +161,7 @@ const createPlaylist = async (req, res, next) => {
     await client.query('BEGIN');
     
     const { title, description, youtube_playlist_id } = req.body;
-    const userId = req.user.uuid;
+    const userId = req.user.id;
     
     // 필수 필드 확인
     if (!title) {

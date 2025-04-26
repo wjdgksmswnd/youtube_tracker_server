@@ -41,7 +41,7 @@ async function getAccessibleTabs(req, res, next) {
     const permissionResult = await db.query(permissionQuery, [
       req.user.level_id,
       req.user.group_id,
-      req.user.uuid
+      req.user.id
     ]);
     
     // 권한 목록

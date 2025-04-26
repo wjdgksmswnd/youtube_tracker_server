@@ -1,5 +1,6 @@
 // src/controllers/admin.js - 관리자 컨트롤러
 const path = require('path');
+const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { logger } = require('../utils/logger');
 const { AppError } = require('../utils/errors');
@@ -23,49 +24,56 @@ async function createSuperUser(req, res, next) {
       return res.redirect('/api/admin/su?error=사용자 ID, 이름, 비밀번호가 필요합니다');
     }
     
-    await client.query('BEGIN');
+    await client.beginTransaction();
     
     // 사용자 ID 중복 확인
-    const userCheck = await client.query('SELECT uuid FROM "user" WHERE user_id = $1', [user_id]);
+    const userCheck = await client.query('SELECT id FROM `user` WHERE user_id = ?', [user_id]);
     if (userCheck.rows.length > 0) {
       return res.redirect(`/api/admin/su?error=이미 사용 중인 사용자 ID입니다: ${user_id}`);
     }
     
     // 최고 관리자 레벨 ID 조회
-    const levelQuery = await client.query('SELECT id FROM "level" WHERE level_name = $1', ['최고 관리자']);
+    const levelQuery = await client.query('SELECT id FROM `level` WHERE level_name = ?', ['최고 관리자']);
     const levelId = levelQuery.rows.length > 0 ? levelQuery.rows[0].id : 1; // 기본값 1
     
-    // PostgreSQL 내장 함수로 비밀번호 암호화 및 슈퍼유저 생성
-    const result = await client.query(`
-      INSERT INTO "user" (user_id, username, password, level_id)
-      VALUES ($1, $2, crypt($3, gen_salt('bf', 10)), $4)
-      RETURNING uuid, user_id, username, level_id, created_at
-    `, [user_id, username, password, levelId]);
+    // bcrypt로 비밀번호 암호화 및 슈퍼유저 생성
+    const hashedPassword = await bcrypt.hash(password, 10);
     
-    await client.query('COMMIT');
+    const result = await client.query(`
+      INSERT INTO \`user\` (user_id, username, password, level_id)
+      VALUES (?, ?, ?, ?)
+    `, [user_id, username, hashedPassword, levelId]);
+    
+    // 생성된 사용자 정보 조회
+    const userInfo = await client.query(`
+      SELECT id, user_id, username, level_id, created_at
+      FROM \`user\` WHERE id = ?
+    `, [result.insertId]);
+    
+    await client.commit();
     
     // JSON 요청인 경우 (API 호출)
     if (req.get('content-type') === 'application/json') {
       return res.status(201).json({
         message: '슈퍼유저가 생성되었습니다',
-        user: result.rows[0]
+        user: userInfo.rows[0]
       });
     }
     
     // 폼 제출인 경우 (웹 브라우저)
     return res.redirect(`/api/admin/su?success=true&user_id=${user_id}`);
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.rollback();
     logger.error('슈퍼유저 생성 오류:', err);
     
     let errorMsg = '서버 오류가 발생했습니다';
-    if (err.code === '23505') { // 중복 키 오류
+    if (err.code === 'ER_DUP_ENTRY') { // MariaDB 중복 키 오류 코드
       errorMsg = '이미 사용 중인 ID입니다';
     }
     
     // JSON 요청인 경우 (API 호출)
     if (req.get('content-type') === 'application/json') {
-      return next(new AppError(errorMsg, err.code === '23505' ? 409 : 500));
+      return next(new AppError(errorMsg, err.code === 'ER_DUP_ENTRY' ? 409 : 500));
     }
     
     // 폼 제출인 경우 (웹 브라우저)

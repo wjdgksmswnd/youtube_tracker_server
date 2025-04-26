@@ -11,37 +11,25 @@
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "body-parser": "^1.20.2",
-    "cors{"name": "odo-server",
-    "version": "2.0.0",
-    "description": "YouTube Music Tracker 서버",
-    "main": "src/index.js",
-    "scripts": {
-      "start": "node src/index.js",
-      "dev": "nodemon src/index.js",
-      "test": "jest"
-    },
-    "dependencies": {
-      "bcryptjs": "^2.4.3",
-      "body-parser": "^1.20.2",
-      "cors": "^2.8.5",
-      "dotenv": "^16.0.3",
-      "express": "^4.18.2",
-      "express-rate-limit": "^6.7.0",
-      "helmet": "^6.1.5",
-      "jsonwebtoken": "^9.0.0",
-      "mariadb": "^3.2.0",
-      "winston": "^3.8.2",
-      "xlsx": "^0.18.5"
-    },
-    "devDependencies": {
-      "jest": "^29.5.0",
-      "nodemon": "^2.0.22",
-      "supertest": "^6.3.3"
-    },
-    "engines": {
-      "node": ">=14.0.0"
-    },
-    "author": "ODO Team",
-    "license": "UNLICENSED",
-    "private": true
-  }
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.3",
+    "express": "^4.18.2",
+    "express-rate-limit": "^6.7.0",
+    "helmet": "^6.1.5",
+    "jsonwebtoken": "^9.0.0",
+    "mariadb": "^3.2.0",
+    "winston": "^3.8.2",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "jest": "^29.5.0",
+    "nodemon": "^2.0.22",
+    "supertest": "^6.3.3"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "author": "ODO Team",
+  "license": "UNLICENSED",
+  "private": true
+}

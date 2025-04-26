@@ -23,7 +23,15 @@ const errorHandler = (err, req, res, next) => {
   // AppError가 아닌 경우 로깅 및 변환
   if (!(err instanceof AppError)) {
     logger.error('처리되지 않은 에러:', err);
-    err = new AppError(err.message || '서버 오류가 발생했습니다', 500);
+    
+    // MariaDB 특정 에러 처리
+    if (err.code === 'ER_DUP_ENTRY') {
+      err = new AppError('데이터 중복 오류가 발생했습니다', 409);
+    } else if (err.code === 'ER_NO_REFERENCED_ROW') {
+      err = new AppError('참조 무결성 오류가 발생했습니다', 400);
+    } else {
+      err = new AppError(err.message || '서버 오류가 발생했습니다', 500);
+    }
   }
   
   // 응답 상태 코드 설정

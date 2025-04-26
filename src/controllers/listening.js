@@ -55,7 +55,7 @@ const saveListeningEvent = async (req, res, next) => {
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       RETURNING event_id`,
       [
-        req.user.uuid,
+        req.user.id,
         req.session?.session_id,
         youtube_track_id,
         youtube_playlist_id || null,
@@ -115,7 +115,7 @@ const saveListening = async (req, res, next) => {
       youtube_playlist_id
     } = req.body;
     
-    const user_id = req.user.uuid;
+    const user_id = req.user.id;
     
     // 이전 버전 호환성: youtube_id를 youtube_track_id로 사용
     const youtube_track_id = youtube_id;
@@ -351,7 +351,7 @@ const updateGroupStatistics = async (client, user_id, duration_seconds) => {
     
     // 신규 테이블에서 먼저 확인
     const userQuery = await client.query(
-      'SELECT group_id FROM "user" WHERE uuid = $1 AND group_id IS NOT NULL',
+      'SELECT group_id FROM "user" WHERE id = $1 AND group_id IS NOT NULL',
       [user_id]
     );
     
@@ -420,7 +420,7 @@ const getListeningHistory = async (req, res, next) => {
       playlist_id 
     } = req.query;
     
-    const user_id = req.user.uuid;
+    const user_id = req.user.id;
     
     // 페이지네이션 설정
     const offset = (page - 1) * limit;
@@ -501,7 +501,7 @@ const getListeningHistory = async (req, res, next) => {
 const getRecentListening = async (req, res, next) => {
   try {
     const { limit = 10 } = req.query;
-    const user_id = req.user.uuid;
+    const user_id = req.user.id;
     
     const historyQuery = `
       SELECT h.history_id, h.track_id, h.youtube_playlist_id, h.duration_seconds, 

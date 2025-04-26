@@ -23,7 +23,7 @@ const checkPermission = (permission) => {
       const permQuery = await db.query(`
         SELECT la.id FROM level_auth la
         JOIN auth a ON la.auth_id = a.id
-        WHERE la.level_id = $1 AND a.auth_key = $2 AND la.is_active = TRUE AND a.is_active = TRUE
+        WHERE la.level_id = ? AND a.auth_key = ? AND la.is_active = TRUE AND a.is_active = TRUE
       `, [req.user.level_id, permission]);
       
       if (permQuery.rows.length > 0) {
@@ -35,9 +35,9 @@ const checkPermission = (permission) => {
         const groupPermQuery = await db.query(`
           SELECT ag.id FROM auth_group ag
           JOIN auth a ON ag.auth_id = a.id
-          WHERE ag.group_id = $1 AND ag.user_id = $2 AND a.auth_key = $3 
+          WHERE ag.group_id = ? AND ag.user_id = ? AND a.auth_key = ? 
             AND ag.is_active = TRUE AND a.is_active = TRUE
-        `, [req.user.group_id, req.user.uuid, permission]);
+        `, [req.user.group_id, req.user.id, permission]);
         
         if (groupPermQuery.rows.length > 0) {
           return next();

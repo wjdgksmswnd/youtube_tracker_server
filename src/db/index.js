@@ -34,15 +34,19 @@ const query = async (sql, params = []) => {
   
   try {
     conn = await pool.getConnection();
-    const rows = await conn.query(sql, params);
+    
+    // PostgreSQL 스타일의 파라미터 $1, $2를 MariaDB 스타일 ?로 변환
+    const convertedSql = sql.replace(/\$(\d+)/g, '?');
+    
+    const rows = await conn.query(convertedSql, params);
     const duration = Date.now() - start;
     
-    logger.debug(`쿼리 실행: ${sql}; 소요 시간: ${duration}ms; 행 수: ${rows.length || 0}`);
+    logger.debug(`쿼리 실행: ${convertedSql}; 소요 시간: ${duration}ms; 행 수: ${rows.length || 0}`);
     
     // MariaDB의 결과를 PostgreSQL과 호환되는 형식으로 변환
     return {
-      rows: rows.meta ? rows : rows, // meta 속성이 있으면 DML 결과이므로 빈 배열 반환
-      rowCount: rows.affectedRows || rows.length || 0,
+      rows: Array.isArray(rows) ? rows : [], // DML 결과인 경우 빈 배열 반환
+      rowCount: rows.affectedRows || (Array.isArray(rows) ? rows.length : 0),
       affectedRows: rows.affectedRows || 0
     };
   } catch (error) {
@@ -67,12 +71,17 @@ const getClient = async () => {
   // query 메서드 래핑하여 PostgreSQL과 유사한 결과를 반환
   conn.query = async (...args) => {
     try {
+      // PostgreSQL 스타일의 파라미터 $1, $2를 MariaDB 스타일 ?로 변환
+      if (typeof args[0] === 'string') {
+        args[0] = args[0].replace(/\$(\d+)/g, '?');
+      }
+      
       const rows = await originalQuery.apply(conn, args);
       
       // MariaDB의 결과를 PostgreSQL과 호환되는 형식으로 변환
       return {
-        rows: rows.meta ? rows : rows, // meta 속성이 있으면 DML 결과이므로 빈 배열 반환
-        rowCount: rows.affectedRows || rows.length || 0,
+        rows: Array.isArray(rows) ? rows : [], // DML 결과인 경우 빈 배열 반환
+        rowCount: rows.affectedRows || (Array.isArray(rows) ? rows.length : 0),
         affectedRows: rows.affectedRows || 0
       };
     } catch (err) {
@@ -105,7 +114,7 @@ const initializeDatabase = async () => {
       await conn.beginTransaction();
       
       // SQL 스크립트 실행
-      // MariaDB용 초기화 SQL 스크립트 실행 (PostgreSQL과 문법이 다름)
+      // MariaDB용 초기화 SQL 스크립트 실행
       
       await conn.commit();
       logger.info('데이터베이스 초기화 완료');

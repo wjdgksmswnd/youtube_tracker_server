@@ -14,7 +14,7 @@ const fs = require('fs');
  */
 const getSummary = async (req, res, next) => {
   try {
-    const userId = req.user.uuid;
+    const userId = req.user.id;
     
     // 오늘 날짜
     const today = new Date().toISOString().split('T')[0];
@@ -90,7 +90,7 @@ const getSummary = async (req, res, next) => {
  */
 const getDailyStats = async (req, res, next) => {
   try {
-    const userId = req.user.uuid;
+    const userId = req.user.id;
     const { start_date, end_date } = req.query;
     
     // 날짜 검증
@@ -133,7 +133,7 @@ const getDailyStats = async (req, res, next) => {
  */
 const getHourlyStats = async (req, res, next) => {
   try {
-    const userId = req.user.uuid;
+    const userId = req.user.id;
     const { date } = req.query;
     
     // 날짜 검증
@@ -329,7 +329,7 @@ const getGroupDailyStats = async (req, res, next) => {
   try {
     const { groupId } = req.params;
     const { start_date, end_date } = req.query;
-    const userId = req.user.uuid;
+    const userId = req.user.id;
     
     // 날짜 검증
     if (!start_date || !end_date) {
@@ -390,7 +390,7 @@ const getGroupDailyStats = async (req, res, next) => {
 const exportStats = async (req, res, next) => {
   try {
     const { type, period, start_date, end_date } = req.query;
-    const userId = req.user.uuid;
+    const userId = req.user.id;
     
     // 입력값 검증
     if (!type || !start_date || !end_date) {

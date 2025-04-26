@@ -28,7 +28,7 @@ const login = async (req, res, next) => {
     }
     
     // 1. 먼저 신규 user 테이블에서 검색
-    const userQuery = await db.query('SELECT * FROM "user" WHERE user_id = $1 AND is_deleted = FALSE', [user_id]);
+    const userQuery = await db.query('SELECT * FROM `user` WHERE user_id = ? AND is_deleted = FALSE', [user_id]);
     if (userQuery.rows.length > 0) {
       return await handleLoginNew(res, next, userQuery.rows[0], password);
     }
@@ -50,13 +50,10 @@ const login = async (req, res, next) => {
  */
 const handleLoginNew = async (res, next, user, password) => {
   try {
-    // PostgreSQL 내장 password 타입 검증
-    const pwCheckQuery = await db.query(
-      'SELECT (password = $1) AS pw_match FROM "user" WHERE uuid = $2',
-      [password, user.uuid]
-    );
+    // bcrypt를 사용한 비밀번호 검증
+    const pwMatch = await bcrypt.compare(password, user.password);
     
-    if (!pwCheckQuery.rows[0]?.pw_match) {
+    if (!pwMatch) {
       return next(new AppError('아이디 또는 비밀번호가 잘못되었습니다', 401));
     }
     
@@ -68,14 +65,14 @@ const handleLoginNew = async (res, next, user, password) => {
     );
     
     // 마지막 로그인 시간 업데이트
-    await db.query('UPDATE "user" SET last_login = CURRENT_TIMESTAMP WHERE uuid = $1', [user.uuid]);
+    await db.query('UPDATE `user` SET last_login = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
     
     // 응답
     return res.json({ 
       message: '로그인 성공', 
       token, 
       user: { 
-        uuid: user.uuid,
+        id: user.id,
         user_id: user.user_id, 
         username: user.username, 
         group_id: user.group_id,
@@ -98,7 +95,7 @@ const handleLoginNew = async (res, next, user, password) => {
  */
 const handleLoginLegacy = async (res, next, email, password) => {
   try {
-    const userRes = await db.query('SELECT * FROM users WHERE email = $1', [email]);
+    const userRes = await db.query('SELECT * FROM users WHERE email = ?', [email]);
     if (!userRes.rows.length) {
       return next(new AppError('이메일 또는 비밀번호가 잘못되었습니다', 401));
     }
@@ -111,7 +108,7 @@ const handleLoginLegacy = async (res, next, email, password) => {
     }
     
     // 마지막 로그인 시간 업데이트
-    await db.query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = $1', [user.user_id]);
+    await db.query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = ?', [user.user_id]);
     
     // 토큰 생성 (이메일을 user_id로 사용)
     const token = jwt.sign(
@@ -156,7 +153,7 @@ const authenticate = async (req, res, next) => {
     
     // 사용자 존재 여부 확인
     const userQuery = await db.query(
-      'SELECT uuid, user_id, username, level_id, group_id, is_deleted FROM "user" WHERE user_id = $1 AND is_deleted = FALSE',
+      'SELECT id, user_id, username, level_id, group_id, is_deleted FROM `user` WHERE user_id = ? AND is_deleted = FALSE',
       [decoded.user_id]
     );
     
@@ -167,7 +164,7 @@ const authenticate = async (req, res, next) => {
     
     // 신규 사용자 정보 설정
     req.user.legacy = false;
-    req.user.uuid = userQuery.rows[0].uuid;
+    req.user.id = userQuery.rows[0].id;
     req.user.username = userQuery.rows[0].username;
     req.user.level_id = userQuery.rows[0].level_id;
     req.user.group_id = userQuery.rows[0].group_id;
@@ -200,7 +197,7 @@ const authenticateSession = async (req, res, next) => {
     
     // 사용자 확인
     const userQuery = await db.query(
-      'SELECT uuid, user_id, username, level_id, group_id, is_deleted FROM "user" WHERE user_id = $1 AND is_deleted = FALSE',
+      'SELECT id, user_id, username, level_id, group_id, is_deleted FROM `user` WHERE user_id = ? AND is_deleted = FALSE',
       [decoded.user_id]
     );
     
@@ -213,7 +210,7 @@ const authenticateSession = async (req, res, next) => {
     } else {
       // 신규 사용자 정보 설정
       req.user.legacy = false;
-      req.user.uuid = userQuery.rows[0].uuid;
+      req.user.id = userQuery.rows[0].id;
       req.user.username = userQuery.rows[0].username;
       req.user.level_id = userQuery.rows[0].level_id;
       req.user.group_id = userQuery.rows[0].group_id;
@@ -245,7 +242,7 @@ const checkLegacyUser = async (req, res, next, decoded) => {
   try {
     // 레거시 테이블에서 사용자 확인
     const legacyUserQuery = await db.query(
-      'SELECT user_id, username, is_deleted FROM users WHERE email = $1 AND is_deleted = FALSE',
+      'SELECT user_id, username, is_deleted FROM users WHERE email = ? AND is_deleted = FALSE',
       [decoded.user_id]
     );
     
@@ -258,7 +255,7 @@ const checkLegacyUser = async (req, res, next, decoded) => {
     
     // 레거시 사용자 정보 설정
     req.user.legacy = true;
-    req.user.uuid = legacyUserQuery.rows[0].user_id;
+    req.user.id = legacyUserQuery.rows[0].user_id;
     req.user.username = legacyUserQuery.rows[0].username;
     
     if (next) {
@@ -282,7 +279,7 @@ const checkLegacyUser = async (req, res, next, decoded) => {
  */
 const createSession = async (req, res, next) => {
   try {
-    const userId = req.user.uuid;
+    const userId = req.user.id;
     const { device_info } = req.body;
     const ipAddress = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     const userAgent = req.headers['user-agent'];
@@ -309,27 +306,27 @@ const createSession = async (req, res, next) => {
     
     // IP 주소 충돌 확인
     const existingSessionQuery = await db.query(
-      'SELECT session_id FROM user_session WHERE user_id = $1 AND ip_address = $2 AND is_active = TRUE',
+      'SELECT session_id FROM user_session WHERE user_id = ? AND ip_address = ? AND is_active = TRUE',
       [userId, ipAddress]
     );
     
     if (existingSessionQuery.rows.length > 0) {
       // 동일 IP의 기존 세션이 있으면 비활성화
       await db.query(
-        'UPDATE user_session SET is_active = FALSE WHERE user_id = $1 AND ip_address = $2 AND is_active = TRUE',
+        'UPDATE user_session SET is_active = FALSE WHERE user_id = ? AND ip_address = ? AND is_active = TRUE',
         [userId, ipAddress]
       );
     }
     
     // 새 세션 생성
     await db.query(
-      'INSERT INTO user_session (session_id, user_id, ip_address, browser, os, device_info, token) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      'INSERT INTO user_session (session_id, user_id, ip_address, browser, os, device_info, token) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [sessionId, userId, ipAddress, browser, os, JSON.stringify(device_info || {}), req.headers.authorization.split(' ')[1]]
     );
     
     // 로그인 히스토리에 기록
     await db.query(
-      'INSERT INTO login_history (user_id, session_id, ip_address, user_agent, login_status) VALUES ($1, $2, $3, $4, $5)',
+      'INSERT INTO login_history (user_id, session_id, ip_address, user_agent, login_status) VALUES (?, ?, ?, ?, ?)',
       [userId, sessionId, ipAddress, userAgent, 'success']
     );
     
@@ -358,14 +355,14 @@ const endSession = async (req, res, next) => {
     }
     
     await db.query(
-      'UPDATE user_session SET is_active = FALSE WHERE session_id = $1 AND user_id = $2',
-      [sessionId, req.user.uuid]
+      'UPDATE user_session SET is_active = FALSE WHERE session_id = ? AND user_id = ?',
+      [sessionId, req.user.id]
     );
     
     // 로그인 히스토리에 로그아웃 기록
     await db.query(
-      'INSERT INTO login_history (user_id, session_id, ip_address, user_agent, login_status) VALUES ($1, $2, $3, $4, $5)',
-      [req.user.uuid, sessionId, req.headers['x-forwarded-for'] || req.socket.remoteAddress, req.headers['user-agent'], 'logout']
+      'INSERT INTO login_history (user_id, session_id, ip_address, user_agent, login_status) VALUES (?, ?, ?, ?, ?)',
+      [req.user.id, sessionId, req.headers['x-forwarded-for'] || req.socket.remoteAddress, req.headers['user-agent'], 'logout']
     );
     
     return res.json({ message: '세션이 종료되었습니다' });
@@ -386,8 +383,8 @@ const verifyUser = async (req, res, next) => {
     if (req.user.legacy) {
       // 레거시 사용자 정보 조회
       const legacyUserQuery = await db.query(
-        'SELECT user_id, username, email, virtual_earnings, created_at FROM users WHERE user_id = $1',
-        [req.user.uuid]
+        'SELECT user_id, username, email, virtual_earnings, created_at FROM users WHERE user_id = ?',
+        [req.user.id]
       );
       
       if (!legacyUserQuery.rows.length) {
@@ -401,8 +398,8 @@ const verifyUser = async (req, res, next) => {
     } else {
       // 신규 사용자 정보 조회
       const userQuery = await db.query(
-        'SELECT uuid, user_id, username, level_id, group_id, created_at FROM "user" WHERE uuid = $1',
-        [req.user.uuid]
+        'SELECT id, user_id, username, level_id, group_id, created_at FROM `user` WHERE id = ?',
+        [req.user.id]
       );
       
       if (!userQuery.rows.length) {
@@ -429,16 +426,16 @@ const verifyUser = async (req, res, next) => {
  */
 const validateSession = async (req, res, next, sessionId) => {
   try {
-    const userId = req.user.uuid;
+    const userId = req.user.id;
     const sessionQuery = await db.query(
-      'SELECT * FROM user_session WHERE session_id = $1 AND user_id = $2 AND is_active = TRUE',
+      'SELECT * FROM user_session WHERE session_id = ? AND user_id = ? AND is_active = TRUE',
       [sessionId, userId]
     );
     
     if (sessionQuery.rows.length === 0) {
       // 세션이 없거나 만료된 경우
       const otherSessionQuery = await db.query(
-        'SELECT ip_address FROM user_session WHERE user_id = $1 AND is_active = TRUE LIMIT 1',
+        'SELECT ip_address FROM user_session WHERE user_id = ? AND is_active = TRUE LIMIT 1',
         [userId]
       );
       
@@ -463,7 +460,7 @@ const validateSession = async (req, res, next, sessionId) => {
     
     // 세션 마지막 활동 시간 업데이트
     await db.query(
-      'UPDATE user_session SET last_active = CURRENT_TIMESTAMP WHERE session_id = $1',
+      'UPDATE user_session SET last_active = CURRENT_TIMESTAMP WHERE session_id = ?',
       [sessionId]
     );
     

@@ -1,4 +1,5 @@
 // src/controllers/user.js - 사용자 관련 컨트롤러
+const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { logger } = require('../utils/logger');
 const { AppError } = require('../utils/errors');
@@ -20,34 +21,44 @@ const createUser = async (req, res, next) => {
       return next(new AppError('사용자 ID, 이름, 비밀번호가 필요합니다', 400));
     }
     
-    await client.query('BEGIN');
+    await client.beginTransaction();
     
     // 사용자 ID 중복 확인
-    const userCheck = await client.query('SELECT uuid FROM "user" WHERE user_id = $1', [user_id]);
+    const userCheck = await client.query('SELECT id FROM `user` WHERE user_id = ?', [user_id]);
     if (userCheck.rows.length > 0) {
       return next(new AppError('이미 사용 중인 사용자 ID입니다', 409));
     }
     
-    // PostgreSQL 내장 함수로 비밀번호 암호화 및 사용자 생성
-    // pgcrypto 확장 모듈을 사용한 방식
-    const result = await client.query(`
-      INSERT INTO "user" (user_id, username, password, level_id, group_id)
-      VALUES ($1, $2, crypt($3, gen_salt('bf', 10)), $4, $5)
-      RETURNING uuid, user_id, username, level_id, group_id, created_at
-    `, [user_id, username, password, level_id, group_id]);
+    // bcrypt로 비밀번호 암호화
+    const hashedPassword = await bcrypt.hash(password, 10);
     
-    await client.query('COMMIT');
+    // 사용자 생성 (MariaDB에서는 RETURNING 지원 안함)
+    const result = await client.query(`
+      INSERT INTO \`user\` (user_id, username, password, level_id, group_id)
+      VALUES (?, ?, ?, ?, ?)
+    `, [user_id, username, hashedPassword, level_id, group_id]);
+    
+    // 생성된 사용자 ID 확인
+    let userId = result.insertId;
+    
+    // 생성된 사용자 정보 조회
+    const userInfo = await client.query(`
+      SELECT id, user_id, username, level_id, group_id, created_at
+      FROM \`user\` WHERE id = ?
+    `, [userId]);
+    
+    await client.commit();
     
     // 생성된 사용자 정보 반환
     res.status(201).json({
       message: '사용자가 생성되었습니다',
-      user: result.rows[0]
+      user: userInfo.rows[0]
     });
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.rollback();
     logger.error('사용자 생성 오류:', err);
     
-    if (err.code === '23505') { // 중복 키 오류
+    if (err.code === 'ER_DUP_ENTRY') { // MariaDB의 중복 키 오류 코드
       return next(new AppError('이미 사용 중인 ID 또는 이메일입니다', 409));
     }
     
@@ -73,7 +84,7 @@ const bulkCreateUsers = async (req, res, next) => {
       return next(new AppError('유효한 사용자 목록이 필요합니다', 400));
     }
     
-    await client.query('BEGIN');
+    await client.beginTransaction();
     
     const results = [];
     const errors = [];
@@ -94,7 +105,7 @@ const bulkCreateUsers = async (req, res, next) => {
       
       try {
         // 사용자 ID 중복 확인
-        const userCheck = await client.query('SELECT uuid FROM "user" WHERE user_id = $1', [user.user_id]);
+        const userCheck = await client.query('SELECT id FROM `user` WHERE user_id = ?', [user.user_id]);
         if (userCheck.rows.length > 0) {
           errors.push({
             index: i,
@@ -104,25 +115,33 @@ const bulkCreateUsers = async (req, res, next) => {
           continue;
         }
         
-        // PostgreSQL 내장 함수로 비밀번호 암호화 및 사용자 생성
-        const result = await client.query(`
-          INSERT INTO "user" (user_id, username, password, level_id, group_id)
-          VALUES ($1, $2, crypt($3, gen_salt('bf', 10)), $4, $5)
-          RETURNING uuid, user_id, username, level_id, group_id
-        `, [user.user_id, user.username, user.password, user.level_id, user.group_id]);
+        // bcrypt로 비밀번호 암호화
+        const hashedPassword = await bcrypt.hash(user.password, 10);
         
-        results.push(result.rows[0]);
+        // 사용자 생성
+        const result = await client.query(`
+          INSERT INTO \`user\` (user_id, username, password, level_id, group_id)
+          VALUES (?, ?, ?, ?, ?)
+        `, [user.user_id, user.username, hashedPassword, user.level_id, user.group_id]);
+        
+        // 생성된 사용자 정보 조회
+        const userInfo = await client.query(`
+          SELECT id, user_id, username, level_id, group_id
+          FROM \`user\` WHERE id = ?
+        `, [result.insertId]);
+        
+        results.push(userInfo.rows[0]);
       } catch (err) {
         logger.error(`사용자 생성 오류 (index: ${i}):`, err);
         errors.push({
           index: i,
           user_id: user.user_id,
-          error: err.code === '23505' ? '이미 사용 중인 ID 또는 이메일입니다' : '처리 중 오류가 발생했습니다'
+          error: err.code === 'ER_DUP_ENTRY' ? '이미 사용 중인 ID 또는 이메일입니다' : '처리 중 오류가 발생했습니다'
         });
       }
     }
     
-    await client.query('COMMIT');
+    await client.commit();
     
     // 결과 반환
     res.status(results.length > 0 ? 201 : 400).json({
@@ -131,7 +150,7 @@ const bulkCreateUsers = async (req, res, next) => {
       errors: errors
     });
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.rollback();
     logger.error('대량 사용자 생성 오류:', err);
     return next(new AppError('서버 오류', 500));
   } finally {
@@ -158,41 +177,42 @@ const listUsers = async (req, res, next) => {
     
     // 검색어 필터
     if (search) {
-      queryParams.push(`%${search}%`);
-      whereClause += ` AND (user_id ILIKE $${queryParams.length} OR username ILIKE $${queryParams.length})`;
+      whereClause += ` AND (user_id LIKE ? OR username LIKE ?)`;
+      queryParams.push(`%${search}%`, `%${search}%`);
     }
     
     // 그룹 필터
     if (group_id) {
+      whereClause += ` AND group_id = ?`;
       queryParams.push(group_id);
-      whereClause += ` AND group_id = $${queryParams.length}`;
     }
     
     // 레벨 필터
     if (level_id) {
+      whereClause += ` AND level_id = ?`;
       queryParams.push(level_id);
-      whereClause += ` AND level_id = $${queryParams.length}`;
     }
     
     // 총 사용자 수 쿼리
-    const countQuery = `SELECT COUNT(*) FROM "user" ${whereClause}`;
+    const countQuery = `SELECT COUNT(*) as count FROM \`user\` ${whereClause}`;
     const countResult = await db.query(countQuery, queryParams);
     const totalUsers = parseInt(countResult.rows[0].count);
     
     // 사용자 목록 쿼리
     const usersQuery = `
-      SELECT u.uuid, u.user_id, u.username, u.level_id, u.group_id, u.created_at, u.last_login,
+      SELECT u.id, u.user_id, u.username, u.level_id, u.group_id, u.created_at, u.last_login,
              l.level_name, ug.group_name
-      FROM "user" u
-      LEFT JOIN "level" l ON u.level_id = l.id
-      LEFT JOIN "user_group" ug ON u.group_id = ug.id
+      FROM \`user\` u
+      LEFT JOIN \`level\` l ON u.level_id = l.id
+      LEFT JOIN \`user_group\` ug ON u.group_id = ug.id
       ${whereClause}
       ORDER BY u.created_at DESC
-      LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
+      LIMIT ? OFFSET ?
     `;
     
-    queryParams.push(parseInt(limit), offset);
-    const usersResult = await db.query(usersQuery, queryParams);
+    // 페이지네이션 파라미터 추가
+    const paginatedParams = [...queryParams, parseInt(limit), offset];
+    const usersResult = await db.query(usersQuery, paginatedParams);
     
     // 결과 반환
     res.json({
@@ -222,28 +242,28 @@ const updateUser = async (req, res, next) => {
     const { username, level_id, group_id } = req.body;
     
     // 사용자 존재 확인
-    const userCheck = await db.query('SELECT uuid FROM "user" WHERE uuid = $1 AND is_deleted = FALSE', [userId]);
+    const userCheck = await db.query('SELECT id FROM `user` WHERE id = ? AND is_deleted = FALSE', [userId]);
     if (userCheck.rows.length === 0) {
       return next(new AppError('사용자를 찾을 수 없습니다', 404));
     }
     
     // 업데이트할 필드 준비
     const updateFields = [];
-    const queryParams = [userId]; // 첫 번째 파라미터는 userId
+    const queryParams = [];
     
     if (username) {
+      updateFields.push(`username = ?`);
       queryParams.push(username);
-      updateFields.push(`username = $${queryParams.length}`);
     }
     
     if (level_id !== undefined) {
+      updateFields.push(`level_id = ?`);
       queryParams.push(level_id);
-      updateFields.push(`level_id = $${queryParams.length}`);
     }
     
     if (group_id !== undefined) {
+      updateFields.push(`group_id = ?`);
       queryParams.push(group_id);
-      updateFields.push(`group_id = $${queryParams.length}`);
     }
     
     // 업데이트할 필드가 없으면 오류
@@ -251,20 +271,33 @@ const updateUser = async (req, res, next) => {
       return next(new AppError('업데이트할 정보가 없습니다', 400));
     }
     
+    // 업데이트 시간 추가
+    updateFields.push('updated_at = CURRENT_TIMESTAMP');
+    
     // 업데이트 쿼리
     const updateQuery = `
-      UPDATE "user"
-      SET ${updateFields.join(', ')}, updated_at = CURRENT_TIMESTAMP
-      WHERE uuid = $1
-      RETURNING uuid, user_id, username, level_id, group_id
+      UPDATE \`user\`
+      SET ${updateFields.join(', ')}
+      WHERE id = ?
     `;
     
-    const result = await db.query(updateQuery, queryParams);
+    // 마지막에 userId 파라미터 추가
+    queryParams.push(userId);
+    
+    await db.query(updateQuery, queryParams);
+    
+    // 업데이트된 사용자 정보 조회
+    const userQuery = `
+      SELECT id, user_id, username, level_id, group_id
+      FROM \`user\` WHERE id = ?
+    `;
+    
+    const userResult = await db.query(userQuery, [userId]);
     
     // 결과 반환
     res.json({
       message: '사용자 정보가 업데이트되었습니다',
-      user: result.rows[0]
+      user: userResult.rows[0]
     });
   } catch (err) {
     logger.error('사용자 업데이트 오류:', err);
@@ -283,7 +316,7 @@ const resetPassword = async (req, res, next) => {
     const { userId } = req.params;
     
     // 사용자 존재 확인
-    const userCheck = await db.query('SELECT uuid FROM "user" WHERE uuid = $1 AND is_deleted = FALSE', [userId]);
+    const userCheck = await db.query('SELECT id FROM `user` WHERE id = ? AND is_deleted = FALSE', [userId]);
     if (userCheck.rows.length === 0) {
       return next(new AppError('사용자를 찾을 수 없습니다', 404));
     }
@@ -291,12 +324,15 @@ const resetPassword = async (req, res, next) => {
     // 임시 비밀번호 생성
     const tempPassword = Math.random().toString(36).substring(2, 10);
     
-    // PostgreSQL 내장 함수로 비밀번호 암호화 및 업데이트
+    // bcrypt로 비밀번호 암호화
+    const hashedPassword = await bcrypt.hash(tempPassword, 10);
+    
+    // 비밀번호 업데이트
     await db.query(`
-      UPDATE "user"
-      SET password = crypt($1, gen_salt('bf', 10)), updated_at = CURRENT_TIMESTAMP
-      WHERE uuid = $2
-    `, [tempPassword, userId]);
+      UPDATE \`user\`
+      SET password = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `, [hashedPassword, userId]);
     
     // 결과 반환
     res.json({
@@ -325,19 +361,19 @@ const changeLevel = async (req, res, next) => {
     }
     
     // 사용자 존재 확인
-    const userCheck = await db.query('SELECT uuid FROM "user" WHERE uuid = $1 AND is_deleted = FALSE', [userId]);
+    const userCheck = await db.query('SELECT id FROM `user` WHERE id = ? AND is_deleted = FALSE', [userId]);
     if (userCheck.rows.length === 0) {
       return next(new AppError('사용자를 찾을 수 없습니다', 404));
     }
     
     // 레벨 존재 확인
-    const levelCheck = await db.query('SELECT id FROM "level" WHERE id = $1 AND is_active = TRUE', [level_id]);
+    const levelCheck = await db.query('SELECT id FROM `level` WHERE id = ? AND is_active = TRUE', [level_id]);
     if (levelCheck.rows.length === 0) {
       return next(new AppError('유효하지 않은 레벨입니다', 404));
     }
     
     // 사용자 레벨 업데이트
-    await db.query('UPDATE "user" SET level_id = $1, updated_at = CURRENT_TIMESTAMP WHERE uuid = $2', [level_id, userId]);
+    await db.query('UPDATE `user` SET level_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [level_id, userId]);
     
     // 결과 반환
     res.json({
@@ -361,21 +397,21 @@ const changeGroup = async (req, res, next) => {
     const { group_id } = req.body;
     
     // 사용자 존재 확인
-    const userCheck = await db.query('SELECT uuid FROM "user" WHERE uuid = $1 AND is_deleted = FALSE', [userId]);
+    const userCheck = await db.query('SELECT id FROM `user` WHERE id = ? AND is_deleted = FALSE', [userId]);
     if (userCheck.rows.length === 0) {
       return next(new AppError('사용자를 찾을 수 없습니다', 404));
     }
     
     // 그룹이 지정된 경우 존재 확인
     if (group_id) {
-      const groupCheck = await db.query('SELECT id FROM "user_group" WHERE id = $1 AND is_active = TRUE', [group_id]);
+      const groupCheck = await db.query('SELECT id FROM `user_group` WHERE id = ? AND is_active = TRUE', [group_id]);
       if (groupCheck.rows.length === 0) {
         return next(new AppError('유효하지 않은 그룹입니다', 404));
       }
     }
     
     // 사용자 그룹 업데이트
-    await db.query('UPDATE "user" SET group_id = $1, updated_at = CURRENT_TIMESTAMP WHERE uuid = $2', [group_id, userId]);
+    await db.query('UPDATE `user` SET group_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [group_id, userId]);
     
     // 결과 반환
     res.json({
@@ -396,7 +432,7 @@ const changeGroup = async (req, res, next) => {
 const changePassword = async (req, res, next) => {
   try {
     const { current_password, new_password } = req.body;
-    const userId = req.user.uuid;
+    const userId = req.user.id;
     
     if (!current_password || !new_password) {
       return next(new AppError('현재 비밀번호와 새 비밀번호가 필요합니다', 400));
@@ -407,21 +443,28 @@ const changePassword = async (req, res, next) => {
     }
     
     // 현재 비밀번호 확인
-    const pwCheck = await db.query(
-      'SELECT (password = $1) AS pw_match FROM "user" WHERE uuid = $2',
-      [current_password, userId]
-    );
+    const userQuery = await db.query('SELECT password FROM `user` WHERE id = ?', [userId]);
     
-    if (!pwCheck.rows[0]?.pw_match) {
+    if (userQuery.rows.length === 0) {
+      return next(new AppError('사용자를 찾을 수 없습니다', 404));
+    }
+    
+    const currentHashedPassword = userQuery.rows[0].password;
+    const passwordMatch = await bcrypt.compare(current_password, currentHashedPassword);
+    
+    if (!passwordMatch) {
       return next(new AppError('현재 비밀번호가 일치하지 않습니다', 401));
     }
     
-    // 새 비밀번호로 업데이트
+    // 새 비밀번호 암호화
+    const hashedPassword = await bcrypt.hash(new_password, 10);
+    
+    // 비밀번호 업데이트
     await db.query(`
-      UPDATE "user"
-      SET password = crypt($1, gen_salt('bf', 10)), updated_at = CURRENT_TIMESTAMP
-      WHERE uuid = $2
-    `, [new_password, userId]);
+      UPDATE \`user\`
+      SET password = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `, [hashedPassword, userId]);
     
     // 결과 반환
     res.json({
