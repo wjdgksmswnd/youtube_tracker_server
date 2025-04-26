@@ -1,321 +1,321 @@
 // js/tabs/playlist-admin.js - 플레이리스트 관리 탭
 const PlaylistAdminTab = {
-    // 초기화
-    initialize(container) {
-      this.container = container;
-      this.currentPage = 1;
-      this.totalPages = 1;
-      this.pageSize = 10;
-      this.currentPlaylist = null;
-      
-      this.render();
-      this.loadPlaylists();
-    },
+  // 초기화
+  initialize(container) {
+    this.container = container;
+    this.currentPage = 1;
+    this.totalPages = 1;
+    this.pageSize = 10;
+    this.currentPlaylist = null;
     
-    // 렌더링
-    render() {
-      this.container.innerHTML = `
-        <div class="d-flex justify-content-between align-items-center mb-3">
-          <h2>플레이리스트 관리</h2>
-          <div>
-            <button id="search-youtube-btn" class="btn btn-secondary me-2">
-              <i class="fab fa-youtube"></i> YouTube 검색
-            </button>
-            <button id="create-playlist-btn" class="btn btn-primary">
-              <i class="fas fa-plus"></i> 새 플레이리스트
-            </button>
-          </div>
+    this.render();
+    this.loadPlaylists();
+  },
+  
+  // 렌더링
+  render() {
+    this.container.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>플레이리스트 관리</h2>
+        <div>
+          <button id="search-youtube-btn" class="btn btn-secondary me-2">
+            <i class="fab fa-youtube"></i> YouTube 검색
+          </button>
+          <button id="create-playlist-btn" class="btn btn-primary">
+            <i class="fas fa-plus"></i> 새 플레이리스트
+          </button>
         </div>
-        
-        <div class="card mb-4">
-          <div class="card-body">
-            <div class="row">
-              <div class="col-md-6 mb-3">
-                <div class="input-group">
-                  <input type="text" id="playlist-search" class="form-control" placeholder="플레이리스트 이름 검색...">
-                  <button class="btn btn-outline-secondary" id="search-btn">
-                    <i class="fas fa-search"></i>
-                  </button>
-                </div>
+      </div>
+      
+      <div class="card mb-4">
+        <div class="card-body">
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <div class="input-group">
+                <input type="text" id="playlist-search" class="form-control" placeholder="플레이리스트 이름 검색...">
+                <button class="btn btn-outline-secondary" id="search-btn">
+                  <i class="fas fa-search"></i>
+                </button>
               </div>
             </div>
           </div>
         </div>
-        
-        <div class="card">
-          <div class="card-body p-0">
-            <div class="table-responsive">
-              <table class="table table-hover">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>썸네일</th>
-                    <th>플레이리스트명</th>
-                    <th>트랙 수</th>
-                    <th>상태</th>
-                    <th>생성일</th>
-                    <th>작업</th>
-                  </tr>
-                </thead>
-                <tbody id="playlists-list">
-                  <tr>
-                    <td colspan="7" class="text-center py-4">
-                      <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">로딩 중...</span>
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <div class="d-flex justify-content-center py-3">
-              <nav id="playlists-pagination"></nav>
-            </div>
-          </div>
-        </div>
-        
-        <!-- 플레이리스트 생성/수정 모달 -->
-        <div class="modal fade" id="playlist-modal" tabindex="-1" aria-hidden="true">
-          <div class="modal-dialog">
-            <div class="modal-content">
-              <div class="modal-header">
-                <h5 class="modal-title" id="playlist-modal-title">새 플레이리스트</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-              </div>
-              <div class="modal-body">
-                <form id="playlist-form">
-                  <input type="hidden" id="playlist-id">
-                  <div class="mb-3">
-                    <label for="playlist-title" class="form-label">플레이리스트명 <span class="text-danger">*</span></label>
-                    <input type="text" class="form-control" id="playlist-title" required>
-                  </div>
-                  <div class="mb-3">
-                    <label for="youtube-playlist-id" class="form-label">YouTube 플레이리스트 ID</label>
-                    <div class="input-group">
-                      <input type="text" class="form-control" id="youtube-playlist-id" placeholder="PL1234567890">
-                      <button class="btn btn-outline-secondary" type="button" id="verify-playlist-btn">
-                        확인
-                      </button>
+      </div>
+      
+      <div class="card">
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>썸네일</th>
+                  <th>플레이리스트명</th>
+                  <th>트랙 수</th>
+                  <th>상태</th>
+                  <th>생성일</th>
+                  <th>작업</th>
+                </tr>
+              </thead>
+              <tbody id="playlists-list">
+                <tr>
+                  <td colspan="7" class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                      <span class="visually-hidden">로딩 중...</span>
                     </div>
-                    <div class="form-text">YouTube 플레이리스트의 ID를 입력하세요 (URL에서 list= 다음 부분)</div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="d-flex justify-content-center py-3">
+            <nav id="playlists-pagination"></nav>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 플레이리스트 생성/수정 모달 -->
+      <div class="modal fade" id="playlist-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title" id="playlist-modal-title">새 플레이리스트</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <form id="playlist-form">
+                <input type="hidden" id="playlist-id">
+                <div class="mb-3">
+                  <label for="playlist-title" class="form-label">플레이리스트명 <span class="text-danger">*</span></label>
+                  <input type="text" class="form-control" id="playlist-title" required>
+                </div>
+                <div class="mb-3">
+                  <label for="youtube-playlist-id" class="form-label">YouTube 플레이리스트 ID</label>
+                  <div class="input-group">
+                    <input type="text" class="form-control" id="youtube-playlist-id" placeholder="PL1234567890">
+                    <button class="btn btn-outline-secondary" type="button" id="verify-playlist-btn">
+                      확인
+                    </button>
                   </div>
-                  <div id="playlist-preview" class="d-none mb-3">
-                    <div class="card">
-                      <div class="card-body">
-                        <div class="d-flex">
-                          <div class="me-3">
-                            <img id="playlist-thumbnail" src="" width="80" class="img-thumbnail">
-                          </div>
-                          <div>
-                            <h6 id="playlist-title-preview">플레이리스트 제목</h6>
-                            <p class="mb-0 text-muted">트랙 수: <span id="playlist-tracks-count">0</span></p>
-                          </div>
+                  <div class="form-text">YouTube 플레이리스트의 ID를 입력하세요 (URL에서 list= 다음 부분)</div>
+                </div>
+                <div id="playlist-preview" class="d-none mb-3">
+                  <div class="card">
+                    <div class="card-body">
+                      <div class="d-flex">
+                        <div class="me-3">
+                          <img id="playlist-thumbnail" src="" width="80" class="img-thumbnail">
+                        </div>
+                        <div>
+                          <h6 id="playlist-title-preview">플레이리스트 제목</h6>
+                          <p class="mb-0 text-muted">트랙 수: <span id="playlist-tracks-count">0</span></p>
                         </div>
                       </div>
                     </div>
                   </div>
-                  <div class="mb-3">
-                    <label for="playlist-description" class="form-label">설명</label>
-                    <textarea class="form-control" id="playlist-description" rows="3"></textarea>
-                  </div>
-                  <div class="form-check form-switch mb-3">
-                    <input class="form-check-input" type="checkbox" id="playlist-active" checked>
-                    <label class="form-check-label" for="playlist-active">활성화</label>
-                  </div>
-                </form>
-              </div>
-              <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
-                <button type="button" class="btn btn-primary" id="save-playlist-btn">저장</button>
-              </div>
+                </div>
+                <div class="mb-3">
+                  <label for="playlist-description" class="form-label">설명</label>
+                  <textarea class="form-control" id="playlist-description" rows="3"></textarea>
+                </div>
+                <div class="form-check form-switch mb-3">
+                  <input class="form-check-input" type="checkbox" id="playlist-active" checked>
+                  <label class="form-check-label" for="playlist-active">활성화</label>
+                </div>
+              </form>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+              <button type="button" class="btn btn-primary" id="save-playlist-btn">저장</button>
             </div>
           </div>
         </div>
-        
-        <!-- 플레이리스트 상세 모달 -->
-        <div class="modal fade" id="playlist-detail-modal" tabindex="-1" aria-hidden="true">
-          <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-              <div class="modal-header">
-                <h5 class="modal-title" id="playlist-detail-title">플레이리스트 상세 정보</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-              </div>
-              <div class="modal-body" id="playlist-detail-content">
-                <div class="d-flex justify-content-center">
-                  <div class="spinner-border text-primary" role="status">
-                    <span class="visually-hidden">로딩 중...</span>
-                  </div>
+      </div>
+      
+      <!-- 플레이리스트 상세 모달 -->
+      <div class="modal fade" id="playlist-detail-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title" id="playlist-detail-title">플레이리스트 상세 정보</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="playlist-detail-content">
+              <div class="d-flex justify-content-center">
+                <div class="spinner-border text-primary" role="status">
+                  <span class="visually-hidden">로딩 중...</span>
                 </div>
               </div>
-              <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>
-                <div class="dropdown d-inline-block me-2">
-                  <button class="btn btn-outline-primary dropdown-toggle" type="button" id="playlistActionDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                    작업
-                  </button>
-                  <ul class="dropdown-menu" aria-labelledby="playlistActionDropdown">
-                    <li><a class="dropdown-item" href="#" id="sync-playlist-btn">YouTube 동기화</a></li>
-                    <li><hr class="dropdown-divider"></li>
-                    <li><a class="dropdown-item text-danger" href="#" id="delete-playlist-btn">삭제</a></li>
-                  </ul>
-                </div>
-                <button type="button" class="btn btn-primary" id="edit-playlist-btn">수정</button>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>
+              <div class="dropdown d-inline-block me-2">
+                <button class="btn btn-outline-primary dropdown-toggle" type="button" id="playlistActionDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                  작업
+                </button>
+                <ul class="dropdown-menu" aria-labelledby="playlistActionDropdown">
+                  <li><a class="dropdown-item" href="#" id="sync-playlist-btn">YouTube 동기화</a></li>
+                  <li><hr class="dropdown-divider"></li>
+                  <li><a class="dropdown-item text-danger" href="#" id="delete-playlist-btn">삭제</a></li>
+                </ul>
               </div>
+              <button type="button" class="btn btn-primary" id="edit-playlist-btn">수정</button>
             </div>
           </div>
         </div>
-        
-        <!-- YouTube 플레이리스트 검색 모달 -->
-        <div class="modal fade" id="youtube-search-modal" tabindex="-1" aria-hidden="true">
-          <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-              <div class="modal-header">
-                <h5 class="modal-title">YouTube 플레이리스트 검색</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      
+      <!-- YouTube 플레이리스트 검색 모달 -->
+      <div class="modal fade" id="youtube-search-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">YouTube 플레이리스트 검색</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <div class="input-group mb-3">
+                <input type="text" class="form-control" id="youtube-search-input" placeholder="검색어 입력...">
+                <button class="btn btn-primary" type="button" id="youtube-search-submit-btn">
+                  <i class="fas fa-search"></i> 검색
+                </button>
               </div>
-              <div class="modal-body">
-                <div class="input-group mb-3">
-                  <input type="text" class="form-control" id="youtube-search-input" placeholder="검색어 입력...">
-                  <button class="btn btn-primary" type="button" id="youtube-search-submit-btn">
-                    <i class="fas fa-search"></i> 검색
-                  </button>
-                </div>
-                
-                <div id="youtube-search-results" class="mt-3">
-                  <!-- 검색 결과가 여기에 표시됩니다 -->
-                </div>
+              
+              <div id="youtube-search-results" class="mt-3">
+                <!-- 검색 결과가 여기에 표시됩니다 -->
               </div>
-              <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>
-              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>
             </div>
           </div>
         </div>
+      </div>
+    `;
+    
+    // 이벤트 리스너 등록
+    this.container.querySelector('#create-playlist-btn').addEventListener('click', () => this.showCreatePlaylistModal());
+    this.container.querySelector('#save-playlist-btn').addEventListener('click', () => this.savePlaylist());
+    this.container.querySelector('#verify-playlist-btn').addEventListener('click', () => this.verifyYouTubePlaylist());
+    this.container.querySelector('#search-btn').addEventListener('click', () => this.searchPlaylists());
+    this.container.querySelector('#playlist-search').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') this.searchPlaylists();
+    });
+    this.container.querySelector('#edit-playlist-btn').addEventListener('click', () => {
+      if (this.currentPlaylist) {
+        this.showEditPlaylistModal(this.currentPlaylist);
+      }
+    });
+    this.container.querySelector('#delete-playlist-btn').addEventListener('click', () => {
+      if (this.currentPlaylist) {
+        this.deletePlaylist(this.currentPlaylist.id);
+      }
+    });
+    this.container.querySelector('#sync-playlist-btn').addEventListener('click', () => {
+      if (this.currentPlaylist) {
+        this.syncYouTubePlaylist(this.currentPlaylist.id);
+      }
+    });
+    this.container.querySelector('#search-youtube-btn').addEventListener('click', () => this.showYouTubeSearchModal());
+    this.container.querySelector('#youtube-search-submit-btn').addEventListener('click', () => this.searchYouTubePlaylists());
+    this.container.querySelector('#youtube-search-input').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') this.searchYouTubePlaylists();
+    });
+  },
+  
+  // 플레이리스트 목록 로드
+  async loadPlaylists(page = 1, search = '') {
+    try {
+      this.currentPage = page;
+      const searchInput = this.container.querySelector('#playlist-search');
+      const searchTerm = search || searchInput.value || '';
+      
+      // 로딩 표시
+      this.container.querySelector('#playlists-list').innerHTML = `
+        <tr>
+          <td colspan="7" class="text-center py-4">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">로딩 중...</span>
+            </div>
+          </td>
+        </tr>
       `;
       
-      // 이벤트 리스너 등록
-      this.container.querySelector('#create-playlist-btn').addEventListener('click', () => this.showCreatePlaylistModal());
-      this.container.querySelector('#save-playlist-btn').addEventListener('click', () => this.savePlaylist());
-      this.container.querySelector('#verify-playlist-btn').addEventListener('click', () => this.verifyYouTubePlaylist());
-      this.container.querySelector('#search-btn').addEventListener('click', () => this.searchPlaylists());
-      this.container.querySelector('#playlist-search').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') this.searchPlaylists();
+      // 플레이리스트 목록 가져오기
+      const response = await API.get('/playlist/list', {
+        page: this.currentPage,
+        limit: this.pageSize,
+        search: searchTerm
       });
-      this.container.querySelector('#edit-playlist-btn').addEventListener('click', () => {
-        if (this.currentPlaylist) {
-          this.showEditPlaylistModal(this.currentPlaylist);
-        }
-      });
-      this.container.querySelector('#delete-playlist-btn').addEventListener('click', () => {
-        if (this.currentPlaylist) {
-          this.deletePlaylist(this.currentPlaylist.id);
-        }
-      });
-      this.container.querySelector('#sync-playlist-btn').addEventListener('click', () => {
-        if (this.currentPlaylist) {
-          this.syncYouTubePlaylist(this.currentPlaylist.id);
-        }
-      });
-      this.container.querySelector('#search-youtube-btn').addEventListener('click', () => this.showYouTubeSearchModal());
-      this.container.querySelector('#youtube-search-submit-btn').addEventListener('click', () => this.searchYouTubePlaylists());
-      this.container.querySelector('#youtube-search-input').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') this.searchYouTubePlaylists();
-      });
-    },
-    
-    // 플레이리스트 목록 로드
-    async loadPlaylists(page = 1, search = '') {
-      try {
-        this.currentPage = page;
-        const searchInput = this.container.querySelector('#playlist-search');
-        const searchTerm = search || searchInput.value || '';
-        
-        // 로딩 표시
-        this.container.querySelector('#playlists-list').innerHTML = `
-          <tr>
-            <td colspan="7" class="text-center py-4">
-              <div class="spinner-border text-primary" role="status">
-                <span class="visually-hidden">로딩 중...</span>
-              </div>
-            </td>
-          </tr>
-        `;
-        
-        // 플레이리스트 목록 가져오기
-        const response = await API.playlist.list({
-          page: this.currentPage,
-          limit: this.pageSize,
-          search: searchTerm
-        });
-        
-        this.renderPlaylistsList(response.playlists);
-        
-        // 페이지네이션 업데이트
-        this.totalPages = response.pagination.total_pages;
-        this.renderPagination();
-      } catch (error) {
-        console.error('플레이리스트 목록 로드 오류:', error);
-        UTILS.showAlert('플레이리스트 목록을 불러오는 중 오류가 발생했습니다.', 'danger');
-        
-        this.container.querySelector('#playlists-list').innerHTML = `
-          <tr>
-            <td colspan="7" class="text-center text-danger py-4">
-              데이터를 불러오는 중 오류가 발생했습니다.
-            </td>
-          </tr>
-        `;
-      }
-    },
-    
-    // 플레이리스트 목록 렌더링
-    renderPlaylistsList(playlists) {
-      const tbody = this.container.querySelector('#playlists-list');
       
-      if (!playlists || playlists.length === 0) {
-        tbody.innerHTML = `
-          <tr>
-            <td colspan="7" class="text-center py-4">
-              플레이리스트가 없습니다.
-            </td>
-          </tr>
-        `;
-        return;
-      }
+      this.renderPlaylistsList(response.playlists);
       
-      tbody.innerHTML = '';
+      // 페이지네이션 업데이트
+      this.totalPages = response.pagination?.total_pages || 1;
+      this.renderPagination();
+    } catch (error) {
+      console.error('플레이리스트 목록 로드 오류:', error);
+      UTILS.showAlert('플레이리스트 목록을 불러오는 중 오류가 발생했습니다.', 'danger');
       
-      playlists.forEach(playlist => {
-        const row = document.createElement('tr');
-        
-        // 생성일 포맷팅
-        const createdAt = new Date(playlist.created_at).toLocaleDateString();
-        
-        // 썸네일 처리
-        const thumbnail = playlist.thumbnail_url ? 
-          `<img src="${playlist.thumbnail_url}" width="40" height="40" class="img-thumbnail">` : 
-          `<div class="bg-light text-center" style="width: 40px; height: 40px;"><i class="fas fa-music"></i></div>`;
-        
-        row.innerHTML = `
-          <td>${playlist.id}</td>
-          <td>${thumbnail}</td>
-          <td>${playlist.title}</td>
-          <td>${playlist.item_count || 0}</td>
-          <td>
-            <span class="badge bg-${playlist.is_active !== false ? 'success' : 'secondary'}">
-              ${playlist.is_active !== false ? '활성' : '비활성'}
-            </span>
+      this.container.querySelector('#playlists-list').innerHTML = `
+        <tr>
+          <td colspan="7" class="text-center text-danger py-4">
+            데이터를 불러오는 중 오류가 발생했습니다.
           </td>
-          <td>${createdAt}</td>
-          <td>
-            <button class="btn btn-sm btn-info view-btn" data-id="${playlist.id}">
-              <i class="fas fa-eye"></i>
-            </button>
-<button class="btn btn-sm btn-primary edit-btn" data-id="${playlist.id}">
+        </tr>
+      `;
+    }
+  },
+  
+  // 플레이리스트 목록 렌더링
+  renderPlaylistsList(playlists) {
+    const tbody = this.container.querySelector('#playlists-list');
+    
+    if (!playlists || playlists.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="7" class="text-center py-4">
+            플레이리스트가 없습니다.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+    
+    tbody.innerHTML = '';
+    
+    playlists.forEach(playlist => {
+      const row = document.createElement('tr');
+      
+      // 생성일 포맷팅
+      const createdAt = new Date(playlist.created_at).toLocaleDateString();
+      
+      // 썸네일 처리
+      const thumbnail = playlist.thumbnail_url ? 
+        `<img src="${playlist.thumbnail_url}" width="40" height="40" class="img-thumbnail">` : 
+        `<div class="bg-light text-center" style="width: 40px; height: 40px;"><i class="fas fa-music"></i></div>`;
+      
+      row.innerHTML = `
+        <td>${playlist.id}</td>
+        <td>${thumbnail}</td>
+        <td>${playlist.title}</td>
+        <td>${playlist.item_count || 0}</td>
+        <td>
+          <span class="badge bg-${playlist.is_active !== false ? 'success' : 'secondary'}">
+            ${playlist.is_active !== false ? '활성' : '비활성'}
+          </span>
+        </td>
+        <td>${createdAt}</td>
+        <td>
+          <button class="btn btn-sm btn-info view-btn" data-id="${playlist.id}">
+            <i class="fas fa-eye"></i>
+          </button>
+          <button class="btn btn-sm btn-primary edit-btn" data-id="${playlist.id}">
             <i class="fas fa-edit"></i>
           </button>
         </td>
       `;
-      
+    
       // 상세 보기 버튼 이벤트
       row.querySelector('.view-btn').addEventListener('click', () => this.viewPlaylistDetails(playlist.id));
       
@@ -387,7 +387,7 @@ const PlaylistAdminTab = {
       verifyButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 확인 중...';
       
       // 플레이리스트 정보 가져오기
-      const response = await API.playlist.getYouTubePlaylist(youtubeId);
+      const response = await API.get(`/playlist/youtube/${youtubeId}`);
       
       // 버튼 상태 복원
       verifyButton.disabled = false;
@@ -429,7 +429,7 @@ const PlaylistAdminTab = {
   async editPlaylist(playlistId) {
     try {
       // 플레이리스트 정보 로드
-      const response = await API.playlist.get(playlistId);
+      const response = await API.get(`/playlist/${playlistId}`);
       
       if (!response || !response.playlist) {
         UTILS.showAlert('플레이리스트 정보를 불러올 수 없습니다.', 'danger');
@@ -509,10 +509,10 @@ const PlaylistAdminTab = {
       
       if (playlistId) {
         // 플레이리스트 수정
-        response = await API.playlist.update(playlistId, playlistData);
+        response = await API.put(`/playlist/${playlistId}`, playlistData);
       } else {
         // 새 플레이리스트 생성
-        response = await API.playlist.create(playlistData);
+        response = await API.post('/playlist', playlistData);
       }
       
       // 저장 버튼 복원
@@ -535,9 +535,9 @@ const PlaylistAdminTab = {
         
         // YouTube 플레이리스트가 있는 경우 동기화 제안
         if (youtubePlaylistId && !playlistId) {
-          if (confirm('YouTube 플레이리스트를 지금 동기화하시겠습니까?')) {
-            const newPlaylistId = response.playlist?.id;
-            if (newPlaylistId) {
+          const newPlaylistId = response.playlist?.id;
+          if (newPlaylistId) {
+            if (confirm('YouTube 플레이리스트를 지금 동기화하시겠습니까?')) {
               this.syncYouTubePlaylist(newPlaylistId);
             }
           }
@@ -574,7 +574,7 @@ const PlaylistAdminTab = {
       modalInstance.show();
       
       // 플레이리스트 정보 로드
-      const response = await API.playlist.get(playlistId);
+      const response = await API.get(`/playlist/${playlistId}`);
       
       if (!response || !response.playlist) {
         this.container.querySelector('#playlist-detail-content').innerHTML = `
@@ -674,7 +674,7 @@ const PlaylistAdminTab = {
                         </td>
                         <td>${track.title}</td>
                         <td>${track.artist || '-'}</td>
-                        <td>${formatTime(track.duration_seconds)}</td>
+                        <td>${this.formatTime(track.duration_seconds)}</td>
                       </tr>
                     `).join('')}
                   </tbody>
@@ -705,7 +705,7 @@ const PlaylistAdminTab = {
       UTILS.showLoading();
       
       // 동기화 요청
-      const response = await API.playlist.syncYouTubePlaylist(playlistId);
+      const response = await API.post(`/playlist/youtube/sync/${playlistId}`);
       
       UTILS.hideLoading();
       
@@ -737,7 +737,7 @@ const PlaylistAdminTab = {
       }
       
       // 삭제 요청
-      const response = await API.playlist.delete(playlistId);
+      const response = await API.delete(`/playlist/${playlistId}`);
       
       if (response && response.message) {
         // 상세 모달 닫기
@@ -790,7 +790,7 @@ const PlaylistAdminTab = {
       `;
       
       // 검색 요청
-      const response = await API.playlist.searchYouTube(searchQuery);
+      const response = await API.get('/playlist/youtube/search', { query: searchQuery });
       
       if (!response || !response.playlists || response.playlists.length === 0) {
         resultsContainer.innerHTML = `
@@ -860,7 +860,7 @@ const PlaylistAdminTab = {
       bootstrap.Modal.getInstance(searchModal).hide();
       
       // 플레이리스트 정보 가져오기
-      const response = await API.playlist.getYouTubePlaylist(youtubeId);
+      const response = await API.get(`/playlist/youtube/${youtubeId}`);
       
       if (!response || !response.playlist) {
         UTILS.showAlert('플레이리스트 정보를 가져올 수 없습니다.', 'danger');
@@ -892,15 +892,15 @@ const PlaylistAdminTab = {
       console.error('YouTube 플레이리스트 가져오기 오류:', error);
       UTILS.showAlert('YouTube 플레이리스트 가져오기 중 오류가 발생했습니다.', 'danger');
     }
+  },
+  
+  // 초 -> MM:SS 형식으로 변환
+  formatTime(seconds) {
+    if (!seconds) return '00:00';
+    
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   }
 };
-
-// 초 -> MM:SS 형식으로 변환
-function formatTime(seconds) {
-  if (!seconds) return '00:00';
-  
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  
-  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-}
