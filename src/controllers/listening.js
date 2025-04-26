@@ -380,7 +380,7 @@ const updateGroupStatistics = async (client, user_id, duration_seconds) => {
       // 고유 사용자 확인
       const uniqueUserQuery = await client.query(
         `SELECT DISTINCT user_id FROM listening_history 
-         WHERE user_id = $1 AND listened_at::date = $2`,
+         WHERE user_id = $1 AND date(listened_at) = $2`,
         [user_id, today]
       );
       
@@ -389,11 +389,11 @@ const updateGroupStatistics = async (client, user_id, duration_seconds) => {
       
       await client.query(
         `UPDATE group_daily_stat 
-         SET total_minutes = total_minutes + $1, 
+         SET total_minutes = total_minutes + ?, 
              total_tracks = total_tracks + 1,
-             total_unique_users = total_unique_users + $2,
+             total_unique_users = total_unique_users + ?,
              updated_at = CURRENT_TIMESTAMP
-         WHERE group_id = $3 AND date = $4`,
+         WHERE group_id = ? AND date = ?`,
         [Math.floor(duration_seconds / 60), uniqueUserIncrement, groupId, today]
       );
     }
@@ -432,25 +432,25 @@ const getListeningHistory = async (req, res, next) => {
     // 날짜 필터
     if (start_date && end_date) {
       queryParams.push(start_date, end_date);
-      whereClause += ` AND h.listened_at::date BETWEEN $${queryParams.length - 1} AND $${queryParams.length}`;
+      whereClause += ` AND date(h.listened_at) BETWEEN ? AND ?`;
     } else if (start_date) {
       queryParams.push(start_date);
-      whereClause += ` AND h.listened_at::date >= $${queryParams.length}`;
+      whereClause += ` AND date(h.listened_at) >= ?`;
     } else if (end_date) {
       queryParams.push(end_date);
-      whereClause += ` AND h.listened_at::date <= $${queryParams.length}`;
+      whereClause += ` AND date(h.listened_at) <= ?`;
     }
     
     // 트랙 필터
     if (track_id) {
       queryParams.push(track_id);
-      whereClause += ` AND h.track_id = $${queryParams.length}`;
+      whereClause += ` AND h.track_id = ?`;
     }
     
     // 플레이리스트 필터
     if (playlist_id) {
       queryParams.push(playlist_id);
-      whereClause += ` AND h.youtube_playlist_id = $${queryParams.length}`;
+      whereClause += ` AND h.youtube_playlist_id = ?`;
     }
     
     // 총 기록 수 쿼리
@@ -509,9 +509,9 @@ const getRecentListening = async (req, res, next) => {
              h.is_complete, t.title, t.artist, t.thumbnail_url
       FROM listening_history h
       LEFT JOIN track t ON h.track_id = t.youtube_track_id
-      WHERE h.user_id = $1
+      WHERE h.user_id = ?
       ORDER BY h.listened_at DESC
-      LIMIT $2
+      LIMIT ?
     `;
     
     const historyResult = await db.query(historyQuery, [user_id, parseInt(limit)]);

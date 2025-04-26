@@ -84,7 +84,7 @@ const HistoryTab = {
         this.renderTrackList(response.tracks);
         
         // 페이지네이션 업데이트
-        this.totalPages = response.total_pages;
+        this.totalPages = response.total_pages || 1;
         this.renderPagination();
       } catch (error) {
         console.error('청취 기록 로드 오류:', error);

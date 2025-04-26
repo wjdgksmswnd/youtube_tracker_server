@@ -23,7 +23,7 @@ const listTracks = async (req, res, next) => {
     // 검색어 필터
     if (search) {
       queryParams.push(`%${search}%`);
-      whereClause += ` AND (title ILIKE $${queryParams.length} OR artist ILIKE $${queryParams.length})`;
+      whereClause += ` AND (title ILIKE ? OR artist ILIKE ?)`;
     }
     
     // 총 트랙 수 쿼리

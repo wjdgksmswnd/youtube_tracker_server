@@ -24,7 +24,20 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // 미들웨어 설정
-app.use(helmet()); // 보안 헤더 설정
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "https://cdnjs.cloudflare.com"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com"],
+      imgSrc: ["'self'", "data:"],
+      connectSrc: ["'self'", "http://localhost:8080", "https://odo.ist"],
+      fontSrc: ["'self'", "https://cdnjs.cloudflare.com"],
+      objectSrc: ["'none'"],
+      upgradeInsecureRequests: []
+    }
+  }
+}));
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
@@ -32,7 +45,6 @@ app.use(cors({
 }));
 app.use(bodyParser.json()); // JSON 요청 처리
 app.use(bodyParser.urlencoded({ extended: true })); // URL-encoded 폼 데이터 처리
-app.use(express.static('public')); // 정적 파일 제공
 
 // 로깅 미들웨어
 app.use((req, res, next) => {
@@ -78,7 +90,7 @@ app.use((req, res, next) => {
 })();
 
 // 기본 라우트
-app.get('/', (req, res) => {
+app.get('/su', (req, res) => {
   const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
   const isLocalhost = clientIp === '127.0.0.1' || clientIp === '::1' || 
     clientIp === 'localhost' || clientIp === '::ffff:127.0.0.1' ||
@@ -134,6 +146,8 @@ app.use('/api/playlist', playlistRouter);
 app.use('/api/track', trackRouter);
 app.use('/api/tabs', tabsRouter);
 app.use('/api/admin', myAdminRouter);
+
+app.use(express.static('public')); // 정적 파일 제공
 
 // 404 오류 처리
 app.use(notFound);

@@ -38,7 +38,7 @@ const logger = winston.createLogger({
     // 콘솔 출력
     new winston.transports.Console({
       format: winston.format.combine(
-        winston.format.colorize(),
+        // winston.format.colorize(),
         format
       ),
     }),

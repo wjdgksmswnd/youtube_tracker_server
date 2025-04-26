@@ -23,7 +23,7 @@ const listPlaylists = async (req, res, next) => {
     // 검색어 필터
     if (search) {
       queryParams.push(`%${search}%`);
-      whereClause += ` AND op.title ILIKE $${queryParams.length}`;
+      whereClause += ` AND op.title ILIKE ?`;
     }
     
     // 총 플레이리스트 수 쿼리
@@ -253,22 +253,22 @@ const updatePlaylist = async (req, res, next) => {
     
     if (title !== undefined) {
       queryParams.push(title);
-      updateFields.push(`title = $${queryParams.length}`);
+      updateFields.push(`title = ?`);
     }
     
     if (description !== undefined) {
       queryParams.push(description);
-      updateFields.push(`description = $${queryParams.length}`);
+      updateFields.push(`description = ?`);
     }
     
     if (youtube_playlist_id !== undefined) {
       queryParams.push(youtube_playlist_id);
-      updateFields.push(`youtube_playlist_id = $${queryParams.length}`);
+      updateFields.push(`youtube_playlist_id = ?`);
     }
     
     if (is_active !== undefined) {
       queryParams.push(!!is_active); // boolean으로 변환
-      updateFields.push(`is_active = $${queryParams.length}`);
+      updateFields.push(`is_active = ?`);
     }
     
     // 업데이트 시간 추가

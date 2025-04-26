@@ -121,11 +121,16 @@ const UTILS = {
     
     // 로딩 표시
     showLoading() {
+      console.log('로딩 표시');
       document.getElementById('loading-overlay').style.display = 'flex';
     },
     
     // 로딩 숨기기
     hideLoading() {
+      console.log('로딩 숨기기');
+      const loadingOverlay = document.getElementById('loading-overlay');
+      loadingOverlay.classList.remove('d-flex');
+      loadingOverlay.classList.add('d-none');
       document.getElementById('loading-overlay').style.display = 'none';
     },
     
