@@ -28,6 +28,7 @@ temp/
 *.swo
 .DS_Store
 Thumbs.db
+package-lock.json
 
 # 테스트 관련
 coverage/
