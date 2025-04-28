@@ -30,7 +30,7 @@ app.use(helmet({
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "https://cdnjs.cloudflare.com"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com"],
-      imgSrc: ["'self'", "data:"],
+      imgSrc: ["'self'", "data:", "https://i.ytimg.com", "https://*.ytimg.com"],
       connectSrc: ["'self'", "http://localhost:8080", "https://odo.ist"],
       fontSrc: ["'self'", "https://cdnjs.cloudflare.com"],
       objectSrc: ["'none'"],
@@ -38,6 +38,18 @@ app.use(helmet({
     }
   }
 }));
+
+// 로깅 미들웨어
+app.use((req, res, next) => {
+  const start = Date.now();
+  
+  // 디버깅용 요청 헤더와 본문 로깅  
+  logger.debug('=== 요청 본문 ===');
+  logger.debug(JSON.stringify(req.body, null, 2));
+  
+  next();
+});
+
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE'],

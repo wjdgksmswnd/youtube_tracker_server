@@ -2,7 +2,65 @@
 const db = require('../db');
 const { logger } = require('../utils/logger');
 const { AppError } = require('../utils/errors');
-const axios = require('axios'); // YouTube API 호출용 (필요 시 설치)
+const { getYouTubePlaylistInfo, searchYouTubePlaylists } = require('../utils/youtubeApi');
+
+// fetchYouTubePlaylistData 함수를 실제 API 호출로 대체
+async function fetchYouTubePlaylistData(playlistId) {
+  try {
+    // YouTube API 호출
+    console.log('YouTube API에서 가져온 플레이리스트 가져오기');
+    console.log('YouTube API에서 가져온 플레이리스트 가져오기');
+    const playlistInfo = await getYouTubePlaylistInfo(playlistId);
+    logger.debug('YouTube API에서 가져온 플레이리스트 정보:', JSON.stringify(playlistInfo));
+    return playlistInfo;
+  } catch (error) {
+    console.log('YouTube API에서 가져온 플레이리스트 가져오기 실패: ', error );
+    logger.error('YouTube API 호출 오류:', error);
+    // API 호출 실패 시 가상 데이터로 폴백
+    logger.warn('YouTube API 호출 실패, 가상 데이터 사용');
+    return createMockYouTubePlaylistData(playlistId);
+  }
+}
+
+// searchYouTubePlaylist 컨트롤러 함수 수정
+const searchYouTubePlaylist = async (req, res, next) => {
+  try {
+    const { query } = req.query;
+    
+    if (!query) {
+      return next(new AppError('검색어가 필요합니다', 400));
+    }
+    
+    // YouTube API 키 확인
+    if (!process.env.YOUTUBE_API_KEY) {
+      logger.warn('YouTube API 키가 설정되지 않았습니다. 가상 데이터를 반환합니다.');
+      
+      // 가상 데이터 반환
+      const fakePlaylists = createMockYouTubeSearchResults(query);
+      
+      return res.json({
+        playlists: fakePlaylists
+      });
+    }
+    
+    // 실제 YouTube API 호출
+    const results = await searchYouTubePlaylists(query);
+    
+    res.json({
+      playlists: results
+    });
+  } catch (err) {
+    logger.error('YouTube 플레이리스트 검색 오류:', err);
+    
+    // API 호출 실패 시 가상 데이터로 폴백
+    const mockResults = createMockYouTubeSearchResults(query);
+    
+    res.json({
+      playlists: mockResults,
+      note: 'API 호출 실패로 가상 데이터를 반환합니다'
+    });
+  }
+};
 
 /**
  * 플레이리스트 목록 조회
@@ -170,32 +228,6 @@ const createPlaylist = async (req, res, next) => {
       return next(new AppError('플레이리스트 제목이 필요합니다', 400));
     }
     
-    // YouTube 플레이리스트 존재 확인 및 추가 (제공된 경우)
-    if (youtube_playlist_id) {
-      const ytPlaylistQuery = await client.query(
-        'SELECT youtube_playlist_id FROM youtube_playlist WHERE youtube_playlist_id = ?',
-        [youtube_playlist_id]
-      );
-      
-      if (ytPlaylistQuery.rows.length === 0) {
-        // YouTube API 또는 웹 스크래핑을 통해 플레이리스트 정보 가져오기
-        // 여기서는 가상의 데이터 추가 (실제로는 YouTube API 사용)
-        await client.query(`
-          INSERT INTO youtube_playlist 
-          (youtube_playlist_id, title, description, thumbnail_url, item_count, last_updated)
-          VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-          ON DUPLICATE KEY UPDATE
-          last_updated = CURRENT_TIMESTAMP
-        `, [
-          youtube_playlist_id,
-          title,
-          description || '',
-          '', // 썸네일 URL (실제로는 YouTube API에서 가져옴)
-          0   // 아이템 수 (실제로는 YouTube API에서 가져옴)
-        ]);
-      }
-    }
-    
     // 새 플레이리스트 생성
     const insertQuery = `
       INSERT INTO odo_playlist (title, description, youtube_playlist_id, created_by, is_active)
@@ -212,12 +244,85 @@ const createPlaylist = async (req, res, next) => {
     
     const playlistId = insertResult.insertId;
     
+    // YouTube 플레이리스트 정보 처리 (제공된 경우)
+    if (youtube_playlist_id) {
+      // YouTube API 또는 웹 스크래핑을 통해 플레이리스트 정보 가져오기
+
+      // #TODO: 여기서는 fetch한 데이터가 아닌 전달받은 json으로 저장해야함
+      // 일단 getPlaylist에서 이미 insert했기 때문에 막아둠
+
+      // const youtubeData = await fetchYouTubePlaylistData(youtube_playlist_id);
+      
+      // YouTube 플레이리스트 정보 저장/업데이트
+      /*
+      await client.query(`
+        INSERT INTO youtube_playlist 
+        (youtube_playlist_id, title, description, thumbnail_url, item_count, last_updated)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON DUPLICATE KEY UPDATE
+        title = VALUES(title),
+        description = VALUES(description),
+        thumbnail_url = VALUES(thumbnail_url),
+        item_count = VALUES(item_count),
+        last_updated = CURRENT_TIMESTAMP
+      `, [
+        youtube_playlist_id,
+        youtubeData.title,
+        youtubeData.description || '',
+        youtubeData.thumbnail_url || '',
+        youtubeData.tracks?.length || 0
+      ]);
+      
+      // 트랙 정보 처리
+      if (youtubeData.tracks && youtubeData.tracks.length > 0) {
+        for (let i = 0; i < youtubeData.tracks.length; i++) {
+          const track = youtubeData.tracks[i];
+          
+          // 트랙 정보 저장 (중복 무시)
+          await client.query(`
+            INSERT INTO track 
+            (youtube_track_id, title, artist, duration_seconds, thumbnail_url)
+            VALUES (?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE 
+            title = VALUES(title),
+            artist = VALUES(artist),
+            duration_seconds = VALUES(duration_seconds),
+            thumbnail_url = VALUES(thumbnail_url),
+            updated_at = CURRENT_TIMESTAMP
+          `, [
+            track.youtube_track_id,
+            track.title,
+            track.artist || '',
+            track.duration_seconds || 0,
+            track.thumbnail_url || null
+          ]);
+          
+          // playlist_track 매핑 저장
+          await client.query(`
+            INSERT INTO playlist_track
+            (youtube_playlist_id, youtube_track_id, position)
+            VALUES (?, ?, ?)
+            ON DUPLICATE KEY UPDATE 
+            position = VALUES(position),
+            updated_at = CURRENT_TIMESTAMP
+          `, [
+            youtube_playlist_id,
+            track.youtube_track_id,
+            i
+          ]);
+        }
+      }
+        */
+    }
+    
     // 생성된 플레이리스트 정보 조회
     const newPlaylistQuery = `
       SELECT op.id, op.title, op.description, op.youtube_playlist_id,
-             op.created_at, op.is_active, u.username as created_by_name
+             op.created_at, op.is_active, u.username as created_by_name,
+             yp.thumbnail_url, yp.item_count
       FROM odo_playlist op
       LEFT JOIN \`user\` u ON op.created_by = u.id
+      LEFT JOIN youtube_playlist yp ON op.youtube_playlist_id = yp.youtube_playlist_id
       WHERE op.id = ?
     `;
     
@@ -431,6 +536,7 @@ const getYouTubePlaylist = async (req, res, next) => {
     let playlist;
     
     if (playlistResult.rows.length > 0) {
+      // DB에 있는 정보 사용
       playlist = playlistResult.rows[0];
       
       // 트랙 목록 조회
@@ -446,9 +552,80 @@ const getYouTubePlaylist = async (req, res, next) => {
       const tracksResult = await db.query(tracksQuery, [youtubePlaylistId]);
       playlist.tracks = tracksResult.rows;
     } else {
-      // 실제로는 YouTube API 호출로 플레이리스트 정보를 가져와야 함
-      // 여기서는 가상 데이터 반환
-      playlist = createMockYouTubePlaylistData(youtubePlaylistId);
+      // #TODO : 여기서는 inser하면 안됨
+      // DB에 없으면 YouTube API로 가져와서 client 쪽에 쏴줬다가 createPlaylist에서 insert해야하는데 일단 여기서 insert하는거로 막아둠
+      playlist = await fetchYouTubePlaylistData(youtubePlaylistId);
+      
+      // 가져온 정보를 DB에 저장
+      await db.query(`
+        INSERT INTO youtube_playlist 
+        (youtube_playlist_id, title, description, thumbnail_url, item_count, last_updated)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `, [
+        youtubePlaylistId,
+        playlist.title,
+        playlist.description || '',
+        playlist.thumbnail_url || '',
+        playlist.tracks?.length || 0
+      ]);
+      
+      // 트랙 정보도 저장
+      if (playlist.tracks && playlist.tracks.length > 0) {
+        const client = await db.getClient();
+        try {
+          await client.query('BEGIN');
+          
+          for (let i = 0; i < playlist.tracks.length; i++) {
+            const track = playlist.tracks[i];
+            
+            // 트랙 정보 저장
+            await client.query(`
+              INSERT INTO track 
+              (youtube_track_id, title, artist, duration_seconds, thumbnail_url)
+              VALUES (?, ?, ?, ?, ?)
+              ON DUPLICATE KEY UPDATE 
+                title = VALUES(title),
+                artist = VALUES(artist),
+                duration_seconds = VALUES(duration_seconds),
+                thumbnail_url = VALUES(thumbnail_url),
+                updated_at = CURRENT_TIMESTAMP
+            `, [
+              track.youtube_track_id,
+              track.title,
+              track.artist || '',
+              track.duration_seconds || 0,
+              track.thumbnail_url || null
+            ]);
+            
+            // 기존 플레이리스트-트랙 매핑 제거
+            await client.query(
+              `DELETE FROM playlist_track
+              WHERE youtube_playlist_id = ?`,
+              [youtubePlaylistId]
+            );
+
+            // 플레이리스트-트랙 매핑 저장
+            await client.query(`
+              INSERT INTO playlist_track
+              (youtube_playlist_id, youtube_track_id, position)
+              VALUES (?, ?, ?)
+              ON DUPLICATE KEY UPDATE position = ?
+            `, [
+              youtubePlaylistId,
+              track.youtube_track_id,
+              i,
+              i
+            ]);
+          }
+          
+          await client.query('COMMIT');
+        } catch (err) {
+          await client.query('ROLLBACK');
+          logger.error('트랙 저장 오류:', err);
+        } finally {
+          client.release();
+        }
+      }
     }
     
     // 결과 반환
@@ -457,49 +634,6 @@ const getYouTubePlaylist = async (req, res, next) => {
     });
   } catch (err) {
     logger.error('YouTube 플레이리스트 정보 조회 오류:', err);
-    return next(new AppError('서버 오류', 500));
-  }
-};
-
-/**
- * YouTube 플레이리스트 검색
- * @param {Request} req - Express 요청 객체
- * @param {Response} res - Express 응답 객체
- * @param {Function} next - 다음 미들웨어
- */
-const searchYouTubePlaylist = async (req, res, next) => {
-  try {
-    const { query } = req.query;
-    
-    if (!query) {
-      return next(new AppError('검색어가 필요합니다', 400));
-    }
-    
-    // YouTube API 키 준비 (환경 변수에서 가져옴)
-    const youtubeApiKey = process.env.YOUTUBE_API_KEY;
-    
-    if (!youtubeApiKey) {
-      logger.warn('YouTube API 키가 설정되지 않았습니다. 가상 데이터를 반환합니다.');
-      
-      // 가상 데이터 반환
-      const fakePlaylists = createMockYouTubeSearchResults(query);
-      
-      return res.json({
-        playlists: fakePlaylists
-      });
-    }
-    
-    // 실제 YouTube API 호출 (구현이 필요할 경우)
-    // YouTube API v3 호출 구현...
-    
-    // 현재는 가상 데이터 반환
-    const mockResults = createMockYouTubeSearchResults(query);
-    
-    res.json({
-      playlists: mockResults
-    });
-  } catch (err) {
-    logger.error('YouTube 플레이리스트 검색 오류:', err);
     return next(new AppError('서버 오류', 500));
   }
 };
@@ -536,28 +670,38 @@ const syncYouTubePlaylist = async (req, res, next) => {
       return next(new AppError('이 플레이리스트는 YouTube 플레이리스트와 연결되어 있지 않습니다', 400));
     }
     
-    // 실제로는 YouTube API로부터 플레이리스트 정보와 트랙 목록을 가져와야 함
-    // 여기서는 가상 트랙 데이터 생성
-    const fakeTracks = createMockTracks(10);
+    // YouTube API로부터 플레이리스트 정보 가져오기
+    const youtubeData = await fetchYouTubePlaylistData(youtubePlaylistId);
+    const tracks = youtubeData.tracks || [];
     
     // YouTube 플레이리스트 정보 업데이트
     await client.query(
       `UPDATE youtube_playlist
-       SET last_updated = CURRENT_TIMESTAMP, item_count = ?
+       SET title = ?,
+           description = ?,
+           thumbnail_url = ?,
+           item_count = ?,
+           last_updated = CURRENT_TIMESTAMP
        WHERE youtube_playlist_id = ?`,
-      [fakeTracks.length, youtubePlaylistId]
+      [
+        youtubeData.title,
+        youtubeData.description || '',
+        youtubeData.thumbnail_url || '',
+        tracks.length,
+        youtubePlaylistId
+      ]
     );
     
-    // 기존 플레이리스트-트랙 매핑 제거 (선택적)
-    // await client.query(
-    //   `DELETE FROM playlist_track
-    //    WHERE youtube_playlist_id = ?`,
-    //   [youtubePlaylistId]
-    // );
+    // 기존 플레이리스트-트랙 매핑 제거
+    await client.query(
+      `DELETE FROM playlist_track
+       WHERE youtube_playlist_id = ?`,
+      [youtubePlaylistId]
+    );
     
-    // 트랙 정보 동기화
-    for (let i = 0; i < fakeTracks.length; i++) {
-      const track = fakeTracks[i];
+    // 트랙 정보 및 매핑 동기화
+    for (let i = 0; i < tracks.length; i++) {
+      const track = tracks[i];
       
       // 트랙 정보 저장 또는 업데이트
       await client.query(
@@ -573,8 +717,8 @@ const syncYouTubePlaylist = async (req, res, next) => {
         [
           track.youtube_track_id,
           track.title,
-          track.artist,
-          track.duration_seconds,
+          track.artist || '',
+          track.duration_seconds || 0,
           track.thumbnail_url || null
         ]
       );
@@ -583,9 +727,8 @@ const syncYouTubePlaylist = async (req, res, next) => {
       await client.query(
         `INSERT INTO playlist_track
          (youtube_playlist_id, youtube_track_id, position)
-         VALUES (?, ?, ?)
-         ON DUPLICATE KEY UPDATE position = ?, updated_at = CURRENT_TIMESTAMP`,
-        [youtubePlaylistId, track.youtube_track_id, i, i]
+         VALUES (?, ?, ?)`,
+        [youtubePlaylistId, track.youtube_track_id, i]
       );
     }
     
@@ -593,7 +736,7 @@ const syncYouTubePlaylist = async (req, res, next) => {
     
     res.json({
       message: '플레이리스트가 성공적으로 동기화되었습니다',
-      tracks_count: fakeTracks.length
+      tracks_count: tracks.length
     });
   } catch (err) {
     await client.query('ROLLBACK');

@@ -18,9 +18,9 @@ const PlaylistAdminTab = {
       <div class="d-flex justify-content-between align-items-center mb-3">
         <h2>플레이리스트 관리</h2>
         <div>
-          <button id="search-youtube-btn" class="btn btn-secondary me-2">
+          <!--<button id="search-youtube-btn" class="btn btn-secondary me-2">
             <i class="fab fa-youtube"></i> YouTube 검색
-          </button>
+          </button> -->
           <button id="create-playlist-btn" class="btn btn-primary">
             <i class="fas fa-plus"></i> 새 플레이리스트
           </button>
@@ -216,7 +216,7 @@ const PlaylistAdminTab = {
         this.syncYouTubePlaylist(this.currentPlaylist.id);
       }
     });
-    this.container.querySelector('#search-youtube-btn').addEventListener('click', () => this.showYouTubeSearchModal());
+    // this.container.querySelector('#search-youtube-btn').addEventListener('click', () => this.showYouTubeSearchModal());
     this.container.querySelector('#youtube-search-submit-btn').addEventListener('click', () => this.searchYouTubePlaylists());
     this.container.querySelector('#youtube-search-input').addEventListener('keypress', (e) => {
       if (e.key === 'Enter') this.searchYouTubePlaylists();

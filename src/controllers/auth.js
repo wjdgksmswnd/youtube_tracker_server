@@ -32,9 +32,6 @@ const login = async (req, res, next) => {
     if (userQuery.rows.length > 0) {
       return await handleLoginNew(res, next, userQuery.rows[0], password);
     }
-    
-    // 2. 신규 테이블에 없으면 레거시 테이블에서 검색
-    return await handleLoginLegacy(res, next, email, password);
   } catch (err) {
     logger.error('로그인 오류:', err);
     return next(new AppError('서버 오류', 500));
@@ -87,12 +84,10 @@ const handleLoginNew = async (res, next, user, password) => {
     return res.json({ 
       message: '로그인 성공', 
       token, 
-      user: { 
-        id: user.id,
+      user: {
         user_id: user.user_id, 
         username: user.username, 
-        group_id: user.group_id,
-        level_id: user.level_id
+        group_id: user.group_id
       },
       group: groupInfo
     });
@@ -215,23 +210,9 @@ const authenticateSession = async (req, res, next) => {
   try {
     // 토큰 검증
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
-    
-    // Legacy 사용자인 경우
-    if (decoded.legacy) {
-      req.user = decoded;
-      req.user.legacy = true;
-      
-      // 세션 ID가 있으면 세션 검증
-      if (sessionId) {
-        const sessionResult = await validateSession(req, res, next, sessionId, true);
-        if (!sessionResult) {
-          return; // 에러 응답은 validateSession 내에서 처리됨
-        }
-      }
-      
-      return next();
-    }
-    
+     
+    logger.debug('Decoded JWT:', JSON.stringify(decoded));
+
     // 신규 사용자 존재 여부 확인
     const userQuery = await db.query(
       'SELECT id, user_id, username, level_id, group_id, is_deleted FROM `user` WHERE id = ? AND is_deleted = FALSE',
@@ -275,7 +256,7 @@ const authenticateSession = async (req, res, next) => {
 const createSession = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const { device_info, is_extension = false } = req.body;
+    const { device_info, is_extension = true } = req.body;
     const ipAddress = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     const userAgent = req.headers['user-agent'];
     
@@ -305,8 +286,8 @@ const createSession = async (req, res, next) => {
     if (is_extension) {
       // 동일 IP + Extension 세션 비활성화
       await db.query(
-        'UPDATE user_session SET is_active = FALSE WHERE user_id = ? AND ip_address = ? AND session_type = ? AND is_active = TRUE',
-        [userId, ipAddress, 'extension']
+        'UPDATE user_session SET is_active = FALSE WHERE user_id = ? AND ip_address = ? AND session_type = ? AND is_active = TRUE and is_extension = TRUE',
+        [userId, ipAddress]
       );
     }
     
@@ -314,8 +295,8 @@ const createSession = async (req, res, next) => {
     await db.query(
       `INSERT INTO user_session (
         session_id, user_id, token, ip_address, browser, os, 
-        device_info, session_type, created_at, last_active, is_active
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, TRUE)`,
+        device_info, created_at, last_active, is_active, is_extension
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, TRUE, TRUE)`,
       [
         sessionId, 
         userId, 
@@ -323,8 +304,7 @@ const createSession = async (req, res, next) => {
         ipAddress,
         browser,
         os,
-        JSON.stringify(device_info || {}),
-        is_extension ? 'extension' : 'web'
+        JSON.stringify(device_info || {})
       ]
     );
     
