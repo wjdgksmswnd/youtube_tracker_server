@@ -15,16 +15,14 @@ const saveListeningEvent = async (req, res, next) => {
   try {
     await client.query('BEGIN');
     
-    const {
+    var {
       youtube_track_id,
       youtube_playlist_id,
-      title,
-      artist,
       event_type,
       track_position_seconds,
       duration_seconds,
       player_timestamp,
-      history_id,
+      listening_history_id,
       url
     } = req.body;
     
@@ -32,8 +30,8 @@ const saveListeningEvent = async (req, res, next) => {
     const ipAddress = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     
     // 입력값 검증
-    if (!youtube_track_id || !title || !event_type) {
-      return next(new AppError('트랙 ID, 제목, 이벤트 타입이 필요합니다', 400));
+    if (!youtube_track_id || !event_type) {
+      return next(new AppError('트랙 ID, 이벤트 타입이 필요합니다', 400));
     }
     
     // 이벤트 타입 검증
@@ -41,36 +39,59 @@ const saveListeningEvent = async (req, res, next) => {
     if (!validEventTypes.includes(event_type)) {
       return next(new AppError('유효하지 않은 이벤트 타입입니다', 400));
     }
-    
-    // 클라이언트 ID 생성
-    const clientId = req.body.client_id || `event-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 5)}`;
+
+    if (event_type === 'start' || event_type === 'finish' || event_type === 'skip') {
+      if (event_type === 'start') {
+        const result = await client.query(
+          `INSERT INTO listening_history (
+            user_id, session_id, youtube_track_id, youtube_playlist_id,
+            duration_seconds, 
+            play_start_time
+          ) VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id`,
+        [
+          req.user.id, req.session?.session_id,
+          youtube_track_id, youtube_playlist_id || null,
+          duration_seconds,
+          player_timestamp ? new Date(player_timestamp) : new Date(),
+        ]);
+        await client.query('COMMIT');
+        listening_history_id = result.rows[0].id;
+      } else if (event_type === 'finish' || event_type === 'skip') {
+        if (!listening_history_id) {
+          logger.error
+        } else {
+          const result = await client.query(
+            `UPDATE listening_history set actual_duration_seconds= $1, play_end_time = $2 
+              where id = $3`,
+          [
+            duration_seconds,
+            player_timestamp ? new Date(player_timestamp) : new Date(),
+            listening_history_id
+          ]);
+          await client.query('COMMIT');
+        }
+      }
+    }
     
     // 이벤트 저장
     const eventResult = await client.query(
       `INSERT INTO listening_event (
         user_id, session_id, youtube_track_id, youtube_playlist_id,
-        title, artist, event_type, track_position_seconds,
-        duration_seconds, player_timestamp, ip_address, client_id,
-        history_id, url, browser_info, device_info
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        event_type, track_position_seconds,
+        player_timestamp, 
+        ip_address, listening_history_id, url,
+         browser_info, device_info
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       RETURNING event_id`,
       [
-        req.user.id,
-        req.session?.session_id,
-        youtube_track_id,
-        youtube_playlist_id || null,
-        title,
-        artist || '',
-        event_type,
-        track_position_seconds || 0,
-        duration_seconds || 0,
+        req.user.id, req.session?.session_id,
+        youtube_track_id, youtube_playlist_id || null,
+        event_type, track_position_seconds,
         player_timestamp ? new Date(player_timestamp) : new Date(),
         ipAddress,
-        clientId,
-        history_id || null,
-        url || null,
-        req.headers['user-agent'] || null,
-        req.session?.device_info || null
+        listening_history_id || null, url || null,
+        req.headers['user-agent'] || null, req.session?.device_info || null
       ]
     );
     
@@ -78,136 +99,11 @@ const saveListeningEvent = async (req, res, next) => {
     
     res.json({
       message: '이벤트가 저장되었습니다',
-      event_id: eventResult.rows[0].event_id,
-      client_id: clientId
+      listening_history_id: listening_history_id,
     });
   } catch (err) {
     await client.query('ROLLBACK');
     logger.error('청취 이벤트 저장 오류:', err);
-    return next(new AppError('서버 오류', 500));
-  } finally {
-    client.release();
-  }
-};
-
-/**
- * 청취 기록 저장
- * @param {Request} req - Express 요청 객체
- * @param {Response} res - Express 응답 객체
- * @param {Function} next - 다음 미들웨어
- */
-const saveListening = async (req, res, next) => {
-  const client = await db.getClient();
-  
-  try {
-    await client.query('BEGIN');
-    
-    const { 
-      youtube_id, 
-      title, 
-      artist, 
-      duration_seconds, 
-      client_id, 
-      play_start_time, 
-      play_end_time,
-      actual_duration_seconds,
-      is_complete,
-      youtube_playlist_id
-    } = req.body;
-    
-    const user_id = req.user.id;
-    
-    // 이전 버전 호환성: youtube_id를 youtube_track_id로 사용
-    const youtube_track_id = youtube_id;
-    
-    // 입력값 검증
-    if (!title) {
-      return next(new AppError('트랙 제목이 필요합니다', 400));
-    }
-    
-    if (!duration_seconds || isNaN(duration_seconds) || duration_seconds < 1) {
-      return next(new AppError('유효한 재생 시간이 필요합니다', 400));
-    }
-    
-    // 중복 기록 확인 (5분 이내 동일한 client_id로 기록된 경우)
-    if (client_id) {
-      const recentListening = await client.query(
-        `SELECT * FROM listening_history 
-         WHERE user_id = $1 AND client_id = $2 AND 
-         listened_at > NOW() - INTERVAL '5 minutes'`,
-        [user_id, client_id]
-      );
-      
-      if (recentListening.rows.length > 0) {
-        return await handleDuplicateListening(client, res, user_id, recentListening.rows[0], next);
-      }
-    }
-    
-    // 유효한 youtube_track_id 확인
-    const validYoutubeId = youtube_track_id || `generated-${Date.now()}`;
-    
-    // 수익 계산 (1분당 1원, 최소 1원)
-    const earnings = Math.max(1, Math.floor((actual_duration_seconds || duration_seconds) / 60));
-    
-    // 트랙 존재 여부 확인 및 추가
-    const trackResult = await client.query(
-      'SELECT youtube_track_id FROM track WHERE youtube_track_id = $1',
-      [validYoutubeId]
-    );
-    
-    if (trackResult.rows.length === 0) {
-      // 신규 트랙 테이블에 추가
-      await client.query(
-        'INSERT INTO track (youtube_track_id, title, artist, duration_seconds) VALUES ($1, $2, $3, $4)',
-        [validYoutubeId, title, artist || '', duration_seconds]
-      );
-      
-      // 레거시 tracks 테이블도 업데이트
-      await updateLegacyTrack(client, validYoutubeId, title, artist, duration_seconds);
-    }
-    
-    // 청취 기록 추가
-    const historyResult = await client.query(
-      `INSERT INTO listening_history (
-        user_id, track_id, youtube_playlist_id, session_id, duration_seconds, 
-        actual_duration_seconds, client_id, play_start_time, play_end_time, is_complete
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING history_id`,
-      [
-        user_id, 
-        validYoutubeId, 
-        youtube_playlist_id || null,
-        req.session?.session_id,
-        duration_seconds, 
-        actual_duration_seconds || duration_seconds,
-        client_id || null,
-        play_start_time ? new Date(play_start_time) : new Date(),
-        play_end_time ? new Date(play_end_time) : null,
-        is_complete !== undefined ? is_complete : true
-      ]
-    );
-    
-    // 사용자 수익 업데이트 (레거시 사용자의 경우)
-    if (req.user.legacy) {
-      await client.query(
-        'UPDATE users SET virtual_earnings = virtual_earnings + $1 WHERE user_id = $2',
-        [earnings, user_id]
-      );
-    }
-    
-    // 통계 테이블 업데이트
-    await updateStatistics(client, user_id, duration_seconds, earnings);
-    
-    await client.query('COMMIT');
-    
-    // 응답
-    res.json({
-      message: '청취 기록이 저장되었습니다',
-      history_id: historyResult.rows[0].history_id,
-      earnings: earnings
-    });
-  } catch (err) {
-    await client.query('ROLLBACK');
-    logger.error('청취 기록 저장 오류:', err);
     return next(new AppError('서버 오류', 500));
   } finally {
     client.release();
@@ -380,7 +276,7 @@ const updateGroupStatistics = async (client, user_id, duration_seconds) => {
       // 고유 사용자 확인
       const uniqueUserQuery = await client.query(
         `SELECT DISTINCT user_id FROM listening_history 
-         WHERE user_id = $1 AND date(listened_at) = $2`,
+         WHERE user_id = $1 AND date(updated_datetime) = $2`,
         [user_id, today]
       );
       
@@ -432,13 +328,13 @@ const getListeningHistory = async (req, res, next) => {
     // 날짜 필터
     if (start_date && end_date) {
       queryParams.push(start_date, end_date);
-      whereClause += ` AND date(h.listened_at) BETWEEN ? AND ?`;
+      whereClause += ` AND date(h.updated_datetime) BETWEEN ? AND ?`;
     } else if (start_date) {
       queryParams.push(start_date);
-      whereClause += ` AND date(h.listened_at) >= ?`;
+      whereClause += ` AND date(h.updated_datetime) >= ?`;
     } else if (end_date) {
       queryParams.push(end_date);
-      whereClause += ` AND date(h.listened_at) <= ?`;
+      whereClause += ` AND date(h.updated_datetime) <= ?`;
     }
     
     // 트랙 필터
@@ -463,13 +359,11 @@ const getListeningHistory = async (req, res, next) => {
     
     // 청취 기록 쿼리
     const historyQuery = `
-      SELECT h.history_id, h.track_id, h.youtube_playlist_id, h.duration_seconds, 
-             h.actual_duration_seconds, h.listened_at, h.play_start_time, h.play_end_time,
-             h.is_complete, t.title, t.artist, t.thumbnail_url
+      SELECT h.*, t.title, t.artist, t.thumbnail_url
       FROM listening_history h
-      LEFT JOIN track t ON h.track_id = t.youtube_track_id
+      LEFT JOIN track t ON h.youtube_track_id = t.youtube_track_id
       ${whereClause}
-      ORDER BY h.listened_at DESC
+      ORDER BY h.updated_datetime DESC
       LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
     `;
     
@@ -504,13 +398,11 @@ const getRecentListening = async (req, res, next) => {
     const user_id = req.user.id;
     
     const historyQuery = `
-      SELECT h.history_id, h.track_id, h.youtube_playlist_id, h.duration_seconds, 
-             h.actual_duration_seconds, h.listened_at, h.play_start_time, h.play_end_time,
-             h.is_complete, t.title, t.artist, t.thumbnail_url
+      SELECT h.*, t.title, t.artist, t.thumbnail_url
       FROM listening_history h
-      LEFT JOIN track t ON h.track_id = t.youtube_track_id
-      WHERE h.user_id = ?
-      ORDER BY h.listened_at DESC
+      LEFT JOIN track t ON h.youtube_track_id = t.youtube_track_id
+      WHERE h.user_id = ? and h.updated_datetime IS NOT NULL
+      ORDER BY h.play_start_time DESC
       LIMIT ?
     `;
     
@@ -528,7 +420,6 @@ const getRecentListening = async (req, res, next) => {
 
 module.exports = {
   saveListeningEvent,
-  saveListening,
   getListeningHistory,
   getRecentListening
 };

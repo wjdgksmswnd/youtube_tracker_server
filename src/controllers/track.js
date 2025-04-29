@@ -177,17 +177,10 @@ const verifyTrack = async (req, res, next) => {
     // 플레이리스트 포함 여부 반환
     const inPlaylist = result.rows.length > 0;
     
-    res.json({
-      youtube_track_id: youtubeTrackId,
-      inPlaylist,
-      playlist: inPlaylist ? {
-        id: result.rows[0].youtube_playlist_id,
-        title: result.rows[0].title
-      } : null
-    });
+    res.status(200).json({isApproved: inPlaylist});
   } catch (err) {
     logger.error('트랙 승인 확인 오류:', err);
-    return next(new AppError('서버 오류', 500));
+    res.status(200).json({isApproved: false});
   }
 };
 

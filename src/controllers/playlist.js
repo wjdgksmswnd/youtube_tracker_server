@@ -748,79 +748,36 @@ const syncYouTubePlaylist = async (req, res, next) => {
 };
 
 /**
- * 가상 YouTube 검색 결과 생성 (개발용)
- * @param {string} query - 검색어
- * @returns {Array} 가상 플레이리스트 목록
+ * playlist 승인 확인 (플레이리스트에 포함되어 있는지)
+ * @param {Request} req - Express 요청 객체
+ * @param {Response} res - Express 응답 객체
+ * @param {Function} next - 다음 미들웨어
  */
-function createMockYouTubeSearchResults(query) {
-  return [
-    {
-      id: `PL${Math.random().toString(36).substr(2, 8)}`,
-      title: `${query} 관련 플레이리스트 1`,
-      description: '검색 결과 설명',
-      thumbnail_url: 'https://example.com/thumbnail1.jpg',
-      item_count: Math.floor(Math.random() * 30) + 10
-    },
-    {
-      id: `PL${Math.random().toString(36).substr(2, 8)}`,
-      title: `${query} 관련 플레이리스트 2`,
-      description: '두 번째 검색 결과',
-      thumbnail_url: 'https://example.com/thumbnail2.jpg',
-      item_count: Math.floor(Math.random() * 30) + 10
-    },
-    {
-      id: `PL${Math.random().toString(36).substr(2, 8)}`,
-      title: `베스트 ${query} 모음`,
-      description: '인기 컬렉션',
-      thumbnail_url: 'https://example.com/thumbnail3.jpg',
-      item_count: Math.floor(Math.random() * 30) + 10
-    }
-  ];
-}
-
-/**
- * 가상 YouTube 플레이리스트 데이터 생성 (개발용)
- * @param {string} playlistId - 플레이리스트 ID
- * @returns {Object} 가상 플레이리스트 정보
- */
-function createMockYouTubePlaylistData(playlistId) {
-  const trackCount = Math.floor(Math.random() * 10) + 5;
-  
-  return {
-    youtube_playlist_id: playlistId,
-    title: `YouTube 플레이리스트 ${playlistId.substring(0, 6)}`,
-    description: '플레이리스트 설명',
-    thumbnail_url: 'https://example.com/thumbnail.jpg',
-    item_count: trackCount,
-    last_updated: new Date().toISOString(),
-    tracks: createMockTracks(trackCount)
-  };
-}
-
-/**
- * 가상 트랙 데이터 생성 (개발용)
- * @param {number} count - 생성할 트랙 수
- * @returns {Array} 가상 트랙 목록
- */
-function createMockTracks(count) {
-  const tracks = [];
-  const artists = ['아티스트 A', '가수 B', '밴드 C', '뮤지션 D', '그룹 E'];
-  
-  for (let i = 0; i < count; i++) {
-    const trackId = `track-${Math.random().toString(36).substr(2, 9)}`;
+const verifyPlaylist = async (req, res) => {
+  try {
+    const { playlistId } = req.params;
     
-    tracks.push({
-      youtube_track_id: trackId,
-      title: `트랙 ${i + 1}`,
-      artist: artists[Math.floor(Math.random() * artists.length)],
-      duration_seconds: Math.floor(Math.random() * 300) + 120, // 2~7분 사이
-      thumbnail_url: `https://example.com/track-${i}.jpg`,
-      position: i
-    });
+    // 트랙이 승인된 플레이리스트에 포함되어 있는지 확인
+    const query = `
+      SELECT op.youtube_playlist_id
+      FROM odo_playlist op
+      WHERE op.youtube_playlist_id = $1
+        AND op.is_active = TRUE
+        AND op.is_deleted = FALSE
+      LIMIT 1
+    `;
+    
+    const result = await db.query(query, [playlistId]);
+    
+    // 플레이리스트 포함 여부 반환
+    const inPlaylist = result.rows.length > 0;
+    
+    res.status(200).json({isApproved: inPlaylist});
+  } catch (err) {
+    logger.error('playlist 승인 확인 오류:', err);
+    res.status(200).json({isApproved: false});
   }
-  
-  return tracks;
-}
+};
 
 module.exports = {
   listPlaylists,
@@ -831,5 +788,6 @@ module.exports = {
   deletePlaylist,
   searchYouTubePlaylist,
   getYouTubePlaylist,
-  syncYouTubePlaylist
+  syncYouTubePlaylist,
+  verifyPlaylist
 };

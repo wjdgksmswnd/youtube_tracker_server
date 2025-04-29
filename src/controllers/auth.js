@@ -211,8 +211,6 @@ const authenticateSession = async (req, res, next) => {
     // 토큰 검증
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
      
-    logger.debug('Decoded JWT:', JSON.stringify(decoded));
-
     // 신규 사용자 존재 여부 확인
     const userQuery = await db.query(
       'SELECT id, user_id, username, level_id, group_id, is_deleted FROM `user` WHERE id = ? AND is_deleted = FALSE',
@@ -284,10 +282,10 @@ const createSession = async (req, res, next) => {
     
     // Extension 세션인 경우 동일 IP의 다른 Extension 세션 비활성화
     if (is_extension) {
-      // 동일 IP + Extension 세션 비활성화
+      // 동일 ID + Extension 세션 비활성화
       await db.query(
-        'UPDATE user_session SET is_active = FALSE WHERE user_id = ? AND ip_address = ? AND session_type = ? AND is_active = TRUE and is_extension = TRUE',
-        [userId, ipAddress]
+        'UPDATE user_session SET is_active = FALSE, expired_datetime = now() WHERE user_id = ? AND is_active = TRUE and is_extension = TRUE',
+        [userId]
       );
     }
     
@@ -295,7 +293,7 @@ const createSession = async (req, res, next) => {
     await db.query(
       `INSERT INTO user_session (
         session_id, user_id, token, ip_address, browser, os, 
-        device_info, created_at, last_active, is_active, is_extension
+        device_info, created_datetime, last_active, is_active, is_extension
       ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, TRUE, TRUE)`,
       [
         sessionId, 
@@ -360,8 +358,8 @@ const endSession = async (req, res, next) => {
     }
     
     await db.query(
-      'UPDATE user_session SET is_active = FALSE WHERE session_id = ? AND user_id = ?',
-      [sessionId, req.user.id]
+      'UPDATE user_session SET is_active = FALSE WHERE session_id = ?',
+      [sessionId]
     );
     
     // 로그인 히스토리에 로그아웃 기록
@@ -385,22 +383,6 @@ const endSession = async (req, res, next) => {
  */
 const verifyUser = async (req, res, next) => {
   try {
-    if (req.user.legacy) {
-      // 레거시 사용자 정보 조회
-      const legacyUserQuery = await db.query(
-        'SELECT user_id, username, email, virtual_earnings, created_at FROM users WHERE user_id = ?',
-        [req.user.id]
-      );
-      
-      if (!legacyUserQuery.rows.length) {
-        return next(new AppError('사용자를 찾을 수 없습니다', 404));
-      }
-      
-      return res.json({
-        message: '유효한 토큰입니다',
-        user: legacyUserQuery.rows[0]
-      });
-    } else {
       // 신규 사용자 정보 조회
       const userQuery = await db.query(
         'SELECT id, user_id, username, level_id, group_id, created_at FROM `user` WHERE id = ?',
@@ -421,7 +403,6 @@ const verifyUser = async (req, res, next) => {
           permissions
         }
       });
-    }
   } catch (err) {
     logger.error('토큰 검증 오류:', err);
     return next(new AppError('서버 오류', 500));
@@ -454,12 +435,6 @@ const validateSession = async (req, res, next, sessionId, isLegacy = false) => {
       // 세션이 없거나 만료된 경우
       const otherSessionQueryParams = [userId, 'TRUE'];
       let otherSessionQueryCondition = ' AND is_active = ?';
-      
-      // Extension 세션인 경우 동일 타입의 세션만 확인
-      if (isExtension) {
-        otherSessionQueryCondition += ' AND session_type = ?';
-        otherSessionQueryParams.push('extension');
-      }
       
       const otherSessionQuery = await db.query(
         `SELECT ip_address FROM user_session WHERE user_id = ?${otherSessionQueryCondition} LIMIT 1`,

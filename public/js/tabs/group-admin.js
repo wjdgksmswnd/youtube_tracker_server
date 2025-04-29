@@ -250,7 +250,7 @@ const GroupAdminTab = {
         const row = document.createElement('tr');
         
         // 생성일 포맷팅
-        const createdAt = new Date(group.created_at).toLocaleDateString();
+        const createdAt = new Date(group.created_datetime).toLocaleDateString();
         
         row.innerHTML = `
           <td>${group.id}</td>

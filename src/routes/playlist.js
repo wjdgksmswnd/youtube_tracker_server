@@ -55,4 +55,11 @@ router.post('/youtube/sync/:playlistId',
   playlistController.syncYouTubePlaylist
 );
 
+
+// 트랙 승인 확인 (Chrome Extension용)
+router.get('/verify/:playlistId', 
+  authController.authenticate, 
+  playlistController.verifyPlaylist
+);
+
 module.exports = router;

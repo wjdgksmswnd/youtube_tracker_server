@@ -250,7 +250,7 @@ const getPlaylistStats = async (req, res, next) => {
       FROM listening_history lh
       LEFT JOIN odo_playlist op ON lh.youtube_playlist_id = op.youtube_playlist_id
       LEFT JOIN youtube_playlist yp ON lh.youtube_playlist_id = yp.youtube_playlist_id
-      WHERE date(lh.listened_at) BETWEEN $1 AND $2
+      WHERE date(lh.update_datetime) BETWEEN $1 AND $2
         AND lh.youtube_playlist_id IS NOT NULL
       GROUP BY lh.youtube_playlist_id, op.title, yp.title
       ORDER BY total_minutes DESC
@@ -298,7 +298,7 @@ const getTrackStats = async (req, res, next) => {
              SUM(lh.actual_duration_seconds) / 60 as total_minutes
       FROM listening_history lh
       LEFT JOIN track t ON lh.track_id = t.youtube_track_id
-      WHERE date(lh.listened_at) BETWEEN $1 AND $2
+      WHERE date(lh.update_datetime) BETWEEN $1 AND $2
       GROUP BY lh.track_id, t.title, t.artist
       ORDER BY play_count DESC
       LIMIT $3
@@ -513,7 +513,7 @@ const getTrackStatsData = async (userId, startDate, endDate) => {
     FROM listening_history lh
     JOIN track t ON lh.track_id = t.youtube_track_id
     WHERE lh.user_id = $1 
-      AND date(lh.listened_at) BETWEEN $2 AND $3
+      AND date(lh.update_datetime) BETWEEN $2 AND $3
     GROUP BY t.title, t.artist
     ORDER BY COUNT(lh.history_id) DESC
   `;

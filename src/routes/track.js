@@ -20,7 +20,7 @@ router.get('/:trackId',
 
 // 트랙 승인 확인 (Chrome Extension용)
 router.get('/verify/:youtubeTrackId', 
-  authController.authenticateSession, 
+  authController.authenticate, 
   trackController.verifyTrack
 );
 

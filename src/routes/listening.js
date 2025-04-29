@@ -9,7 +9,7 @@ const { checkPermission } = require('../middleware/permission');
 router.post('/event', authController.authenticateSession, listeningController.saveListeningEvent);
 
 // 청취 기록 저장 API
-router.post('/', authController.authenticateSession, listeningController.saveListening);
+// router.post('/', authController.authenticateSession, listeningController.saveListening);
 
 // 청취 기록 조회 API
 router.get('/history', 
